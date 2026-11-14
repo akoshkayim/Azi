@@ -1,0 +1,64 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<script src="https://telegram.org/js/telegram-web-app.js"></script><title>АЗИ</title>
+<style>
+:root{--bg:#120a0a;--fg:#eee;--gold:#e9b949;--card:#1c1c20}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px system-ui;padding:12px;padding-top:max(12px,env(safe-area-inset-top))}
+h2,h3{margin:6px 0}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+button{background:var(--card);color:var(--fg);border:1px solid #444;border-radius:12px;padding:12px 14px;font-size:16px}
+button.g{background:var(--gold);color:#111;border:0;font-weight:600}button.d{background:#4a1515}
+input{background:#000;color:var(--fg);border:1px solid #444;border-radius:10px;padding:10px;width:110px;font-size:16px}
+.t{background:#3a0f12;border-radius:16px;padding:10px;margin:8px 0}.s{background:var(--card);border-radius:12px;padding:8px 10px;min-width:44%;flex:1}
+.s.on{outline:2px solid var(--gold)}.s.f{opacity:.4}.m{color:#aaa;font-size:13px}
+.c{display:inline-block;background:#f4f4f4;color:#111;border-radius:8px;padding:10px 8px;margin:3px;font-size:20px;font-weight:700;min-width:46px;text-align:center}
+.c.r{color:#c22}.c.ok{outline:3px solid var(--gold)}.c.b{background:#333;color:#333}
+</style></head><body><div id=a></div><script>
+const tg=Telegram.WebApp;tg.ready();tg.expand();
+const P=new URLSearchParams(location.search);
+const ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host);
+const send=o=>ws.send(JSON.stringify(o));let S;
+ws.onopen=()=>send({a:'auth',init:tg.initData,dev:P.get('dev'),join:tg.initDataUnsafe&&tg.initDataUnsafe.start_param});
+ws.onmessage=e=>{S=JSON.parse(e.data);draw()};
+const SU=['♠','♥','♦'],RK=['6','7','8','9','10','В','Д','К','Т'];
+const cd=(c,i,ok)=>`<div class="c ${c.s?'r':''} ${ok?'ok':''}" ${ok?`onclick="send({a:'play',i:${i}})"`:''}>${RK[c.r]}${SU[c.s]}</div>`;
+const v=id=>(document.getElementById(id)||{}).value;
+function draw(){
+  const keep={n:v('n'),amt:v('amt')};
+  const A=document.getElementById('a');
+  if(S.v==='x'){A.innerHTML='Откройте игру через Telegram-бота';return}
+  A.innerHTML=S.v==='l'?lobby():table();
+  for(const k in keep)if(keep[k]&&document.getElementById(k))document.getElementById(k).value=keep[k];
+}
+function lobby(){
+  let h=`<h2>♠ АЗИ</h2><div>Ваши фишки: <b>${S.chips}</b></div>${S.err?`<p>${S.err}</p>`:''}<h3>Столы</h3>`;
+  h+=S.tables.map(t=>`<div class=row style="margin:6px 0"><span>Стол ${t.id} · взнос ${t.ante} · ${t.n}/8</span><button onclick="send({a:'join',id:'${t.id}'})">Сесть</button></div>`).join('')||'<p class=m>Столов нет</p>';
+  h+=`<div class=row><input id=n type=number value=100><button class=g onclick="send({a:'create',n:+v('n')})">Создать стол</button></div>`;
+  if(S.admin)h+=`<h3>Админ: выдача фишек</h3><input id=amt type=number placeholder="сумма (+/-)">`+S.users.map(u=>`<div class=row style="margin:6px 0"><span>${u.name} · ${u.chips}</span><button onclick="send({a:'give',to:'${u.id}',n:+v('amt')})">Выдать</button></div>`).join('');
+  return h;
+}
+function table(){
+  const t=S.t,nm=id=>(t.seats.find(s=>s.id===id)||{}).name;
+  let h=`<div class=row><button onclick="send({a:'back'})">←</button><b>Стол ${t.id}</b><span class=m>взнос ${t.ante}</span><span style="margin-left:auto">💰 ${S.chips}</span></div>${S.err?`<p>${S.err}</p>`:''}`;
+  h+=`<div class=t><div>Банк: <b>${t.pot}</b> ${t.high?`· ставка ${t.high}`:''}</div>`;
+  if(t.trump)h+=`<div>Козырь: ${cd(t.trump)}${t.trump.r===8?' <b>Шоха на трассе!</b>':''}</div>`;
+  h+=`<div class=m>${t.log||''}</div></div><div class=row>`;
+  h+=t.seats.map(s=>`<div class="s ${t.turn===s.id?'on':''} ${s.folded?'f':''}"><b>${s.name}</b><div class=m>${s.chips} · взятки ${s.wins||0}${s.folded?' · сброс':''}${s.put?' · ставка '+s.put:''}</div></div>`).join('')+'</div>';
+  if(t.board.length)h+=`<h3>На столе</h3>`+t.board.map(b=>`<div style="display:inline-block;text-align:center"><span class=m>${nm(b.id)}</span><br>${cd(b.c)}</div>`).join('');
+  else if(t.last)h+=`<h3>Прошлая взятка (${nm(t.last.w)})</h3>`+t.last.board.map(b=>cd(b.c)).join('');
+  h+='<h3>Ваши карты</h3>';
+  h+=t.hand?t.hand.map((c,i)=>cd(c,i,t.mine&&t.phase==='play')).join(''):(t.phase==='bid'?'<div class="c b">?</div>'.repeat(3):'');
+  h+='<div class=row style="margin-top:10px">';
+  if(t.phase==='idle'){
+    if(t.seated)h+=`<button class=g onclick="send({a:'start'})">Раздать</button><button onclick="send({a:'leave'})">Выйти</button>`;
+    else h+=`<button class=g onclick="send({a:'join',id:'${t.id}'})">Сесть</button>`;
+    h+=`<button onclick="tg.openTelegramLink('https://t.me/share/url?url='+encodeURIComponent('https://t.me/${t.inv}?startapp=${t.id}')+'&text='+encodeURIComponent('Садись играть в АЗИ'))">Пригласить друзей</button>`;
+  }
+  if(t.phase==='bid'&&t.mine){
+    h+=`<input id=amt type=number placeholder="сумма">`;
+    if(!t.looked)h+=`<button class=g onclick="send({a:'blind',n:+v('amt')})">Вслепую (x2)</button><button onclick="send({a:'look'})">Смотреть карты</button>`;
+    else h+=`<button class=d onclick="send({a:'fold'})">Сбросить</button><button onclick="send({a:'call'})">Уравнять</button><button class=g onclick="send({a:'raise',n:+v('amt')})">Повысить</button>`;
+    if(!t.looked)h+=`<button class=d onclick="send({a:'fold'})">Сбросить</button>`;
+  }
+  if(t.phase==='azi'&&t.offer!=null)h+=`<button class=g onclick="send({a:'azi',yes:1})">Войти в АЗИ за ${t.offer}</button><button onclick="send({a:'azi',yes:0})">Пас</button>`;
+  return h+'</div>';
+}
+</script></body></html>
