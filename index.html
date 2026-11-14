@@ -11,6 +11,11 @@ input{background:#000;color:var(--fg);border:1px solid #444;border-radius:10px;p
 .s.on{outline:2px solid var(--gold)}.s.f{opacity:.4}.m{color:#aaa;font-size:13px}
 .c{display:inline-block;background:#f4f4f4;color:#111;border-radius:8px;padding:10px 8px;margin:3px;font-size:20px;font-weight:700;min-width:46px;text-align:center}
 .c.r{color:#c22}.c.ok{outline:3px solid var(--gold)}.c.b{background:#333;color:#333}
+
+.tb{position:relative;height:430px;margin:6px 0}.felt{position:absolute;inset:7% 3%;background:radial-gradient(#5a1a20,#3a0f12);border:3px solid #7a2a30;border-radius:50%}
+.tb .s{position:absolute;transform:translate(-50%,-50%);flex:none;min-width:0;width:max-content;max-width:42%;text-align:center;font-size:13px;padding:6px 8px}
+.mid{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center;width:56%}.pot{font-size:24px;font-weight:700;color:var(--gold)}
+.c.sm{font-size:15px;padding:5px 4px;min-width:32px;margin:1px;border-radius:6px}
 </style></head><body><div id=a><p>Подключение…</p></div><script>
 const tg=Telegram.WebApp;tg.ready();tg.expand();
 const P=new URLSearchParams(location.search);
@@ -44,27 +49,33 @@ function lobby(){
   return h;
 }
 function table(){
-  const t=S.t;t.board=t.board||[];const nm=id=>(t.seats.find(s=>s.id===id)||{}).name;
+  const t=S.t;t.board=t.board||[];
+  const nm=id=>(t.seats.find(s=>s.id===id)||{}).name,cs=c=>cd(c).replace('class="c ','class="c sm ');
+  const n=t.seats.length,me=Math.max(0,t.seats.findIndex(s=>s.id===t.me));
   let h=`<div class=row><button onclick="send({a:'back'})">←</button><b>Стол ${t.id}</b><span class=m>взнос ${t.ante}</span><span style="margin-left:auto">💰 ${S.chips}</span></div>${S.err?`<p>${S.err}</p>`:''}`;
-  h+=`<div class=t><div>Банк: <b>${t.pot}</b> ${t.high?`· ставка ${t.high}`:''}</div>`;
-  if(t.trump)h+=`<div>Козырь: ${cd(t.trump)}${t.trump.r===8?' <b>Шоха на трассе!</b>':''}</div>`;
-  h+=`<div class=m>${t.log||''}</div></div><div class=row>`;
-  h+=t.seats.map(s=>`<div class="s ${t.turn===s.id?'on':''} ${s.folded?'f':''}"><b>${s.name}</b><div class=m>${s.chips} · взятки ${s.wins||0}${s.folded?' · сброс':''}${s.put?' · ставка '+s.put:''}</div></div>`).join('')+'</div>';
-  if(t.board.length)h+=`<h3>На столе</h3>`+t.board.map(b=>`<div style="display:inline-block;text-align:center"><span class=m>${nm(b.id)}</span><br>${cd(b.c)}</div>`).join('');
-  else if(t.last)h+=`<h3>Прошлая взятка (${nm(t.last.w)})</h3>`+t.last.board.map(b=>cd(b.c)).join('');
+  h+=`<div class=tb><div class=felt></div><div class=mid><div class=m>БАНК</div><div class=pot>${t.pot}</div>${t.high?`<div class=m>ставка ${t.high}</div>`:''}`;
+  if(t.trump)h+=`<div class=m style="margin-top:4px">Козырь ${cs(t.trump)}${t.trump.r===8?'<br><b>Шоха на трассе!</b>':''}</div>`;
+  if(t.board.length)h+='<div style="margin-top:4px">'+t.board.map(b=>`<span style="display:inline-block"><span class=m>${nm(b.id)}</span><br>${cs(b.c)}</span>`).join('')+'</div>';
+  h+='</div>';
+  t.seats.forEach((s,i)=>{const a=(90+(i-me)*360/n)*Math.PI/180,x=50+40*Math.cos(a),y=50+42*Math.sin(a);
+    h+=`<div class="s ${t.turn===s.id?'on':''} ${s.folded?'f':''}" style="left:${x}%;top:${y}%"><b>${s.name}</b><div class=m>${s.chips}${s.wins?' · 🏆'+s.wins:''}${s.put?' · ст.'+s.put:''}</div></div>`});
+  h+=`</div><div class=m>${t.mine?'<b style="color:#e9b949">Ваш ход</b> · ':(t.turn?'Ходит '+nm(t.turn)+' · ':'')}${t.log||''}</div>`;
   h+='<h3>Ваши карты</h3>';
   h+=t.hand?t.hand.map((c,i)=>cd(c,i,t.mine&&t.phase==='play')).join(''):(t.phase==='bid'?'<div class="c b">?</div>'.repeat(3):'');
   h+='<div class=row style="margin-top:10px">';
   if(t.phase==='idle'){
-    if(t.seated)h+=`<button class=g onclick="send({a:'start'})">Раздать</button><button onclick="send({a:'leave'})">Выйти</button>`;
-    else h+=`<button class=g onclick="send({a:'join',id:'${t.id}'})">Сесть</button>`;
+    if(t.seated){
+      if(t.canDeal)h+=`<button class=g onclick="send({a:'start'})">Раздать</button>`;
+      else h+=`<span class=m>Раздаёт: ${t.dealer}</span>`;
+      h+=`<button onclick="send({a:'leave'})">Выйти</button>`;
+    }else h+=`<button class=g onclick="send({a:'join',id:'${t.id}'})">Сесть</button>`;
     h+=`<button onclick="tg.openTelegramLink('https://t.me/share/url?url='+encodeURIComponent('https://t.me/${t.inv}?startapp=${t.id}')+'&text='+encodeURIComponent('Садись играть в АЗИ'))">Пригласить друзей</button>`;
   }
   if(t.phase==='bid'&&t.mine){
+    const my=t.seats.find(x=>x.id===t.me)||{put:0},need=Math.max(0,t.high-my.put);
     h+=`<input id=amt type=number placeholder="сумма">`;
-    if(!t.looked)h+=`<button class=g onclick="send({a:'blind',n:+v('amt')})">Вслепую (x2)</button><button onclick="send({a:'look'})">Смотреть карты</button>`;
-    else h+=`<button class=d onclick="send({a:'fold'})">Сбросить</button><button onclick="send({a:'call'})">Уравнять</button><button class=g onclick="send({a:'raise',n:+v('amt')})">Повысить</button>`;
-    if(!t.looked)h+=`<button class=d onclick="send({a:'fold'})">Сбросить</button>`;
+    if(!t.looked)h+=`<button class=g onclick="send({a:'blind',n:+v('amt')})">Ход</button><button onclick="send({a:'look'})">Ашу</button><div class=m style="width:100%">Ход: вслепую, сумма ×2, должна быть выше текущей ставки (${t.high}). Ашу: открыть карты.</div>`;
+    else h+=`<button onclick="send({a:'call'})">Тең${need?' '+need:''}</button><button class=g onclick="send({a:'raise',n:+v('amt')})">Ары</button><button class=d onclick="send({a:'fold'})">Пас</button><div class=m style="width:100%">Ары: ваша ставка (${my.put}) + сумма должна быть выше ${t.high}.</div>`;
   }
   if(t.phase==='azi'&&t.offer!=null)h+=`<button class=g onclick="send({a:'azi',yes:1})">Войти в АЗИ за ${t.offer}</button><button onclick="send({a:'azi',yes:0})">Пас</button>`;
   return h+'</div>';

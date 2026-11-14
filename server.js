@@ -5,6 +5,7 @@ let users={};try{users=JSON.parse(fs.readFileSync('db.json'))}catch{}
 if(ADMIN&&!users[ADMIN])users[ADMIN]={name:'Админ',chips:0};
 const save=()=>fs.writeFileSync('db.json',JSON.stringify(users));
 const tables={};let tid=1;const conns=new Set();
+const dealerOf=t=>t.seats.find(x=>x.id===t.winner)||t.seats[0];
 const act=t=>t.seats.filter(s=>s.in&&!s.folded);
 const pot=t=>t.phase==='azi'?t.carry:t.carry+t.seats.reduce((a,s)=>a+(s.in?s.paid:0),0);
 
@@ -27,9 +28,10 @@ function start(t,azi){
     if(ins.length<2){t.log='Нужно минимум 2 игрока с фишками';return}
     t.carry=0;
   }
-  t.seats.forEach(s=>{s.in=ins.includes(s);s.hand=[];s.put=0;s.paid=0;s.folded=false;s.looked=false;s.allin=false;s.wins=0});
-  const wi=ins.findIndex(s=>s.id===t.winner);
-  t.order=azi?ins:[...ins.slice(wi+1),...ins.slice(0,wi+1)]; // торги начинает игрок слева от победителя
+  t.seats.forEach(s=>{s.in=ins.includes(s);s.hand=[];s.put=0;s.paid=0;s.folded=false;s.looked=false;s.allin=false;s.wins=0;s.blinded=false});
+  const did=t.seats.find(x=>x.id===t.winner)?t.winner:t.seats[0].id; // сдающий
+  const wi=ins.findIndex(s=>s.id===did);
+  t.order=azi||wi<0?ins:[...ins.slice(wi+1),...ins.slice(0,wi+1)]; // первым ходит игрок слева от сдающего
   if(!azi)ins.forEach(s=>{s.paid=t.ante;users[s.id].chips-=t.ante});
   const d=[];for(let s=0;s<3;s++)for(let r=0;r<9;r++)d.push({s,r}); // 27 карт, без крестей
   for(let i=d.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[d[i],d[j]]=[d[j],d[i]]}
@@ -38,15 +40,16 @@ function start(t,azi){
   t.phase='bid';t.log=azi?'АЗИ: новые торги':'Торги';save();
 }
 function bid(t,s,m){
-  const q=users[s.id];
+  const q=users[s.id],OPEN='Сначала откройте карты (Ашу)';
   if(m.a==='look'){s.looked=true;return}
-  if(m.a==='fold')s.folded=true;
-  else if(m.a==='call')pay(t,s,t.high-s.put);
+  if(m.a==='fold'){if(!s.looked)return OPEN;s.folded=true}
+  else if(m.a==='call'){if(!s.looked)return OPEN;pay(t,s,t.high-s.put)}
   else if(m.a==='raise'||m.a==='blind'){
-    let n=Math.floor(+m.n);if(!(n>0))return;
-    if(m.a==='blind'){if(s.looked)return;n*=2}else if(!s.looked)return; // вслепую считается x2
+    let n=Math.floor(+m.n);if(!(n>0))return 'Введите сумму';
+    if(m.a==='blind'){if(s.looked||s.blinded)return;n*=2}else if(!s.looked)return OPEN; // ход вслепую считается x2
     n=Math.min(n,q.chips);
-    if(s.put+n<=t.high&&n<q.chips)return;
+    if(s.put+n<=t.high&&n<q.chips)return 'Ставка должна быть больше текущей ('+t.high+'). У вас выйдет '+(s.put+n);
+    if(m.a==='blind'){s.blinded=true;s.looked=true} // после хода карты открываются
     pay(t,s,n);
     if(s.put>t.high){t.high=s.put;t.lead=s.id;t.acted=new Set()}
   }else return;
@@ -113,7 +116,7 @@ function arm(t){
     if(t.phase==='azi'){for(const id in t.offer)if(!(id in t.dec))t.dec[id]=false;aziGo(t)}
     else{
       const s=t.order[t.turn];
-      if(t.phase==='bid')bid(t,s,{a:s.put===t.high?'call':'fold'});
+      if(t.phase==='bid'){s.looked=true;bid(t,s,{a:s.put===t.high?'call':'fold'})}
       else play(t,s,s.hand.findIndex((_,k)=>legal(t,s,k)));
     }
     arm(t);sync();
@@ -121,12 +124,12 @@ function arm(t){
 }
 function view(t,u){
   const s=t.seats.find(x=>x.id===u),cur=(t.phase==='bid'||t.phase==='play')&&t.order[t.turn];
-  return{id:t.id,ante:t.ante,phase:t.phase,pot:pot(t),high:t.high,trump:t.phase!=='idle'?t.trump:null,
+  return{id:t.id,ante:t.ante,phase:t.phase,pot:t.phase==='idle'?0:pot(t),high:t.phase==='idle'?0:t.high,trump:t.phase!=='idle'?t.trump:null,
     turn:cur&&cur.id,board:t.board,last:t.lastTrick,log:t.log,me:u,inv:BOT,
     offer:t.phase==='azi'&&t.offer[u]!=null&&!(u in t.dec)?t.offer[u]:null,
-    seats:t.seats.map(x=>({id:x.id,name:x.name,chips:users[x.id].chips,in:x.in,folded:x.folded,put:x.put,wins:x.wins,n:x.hand?x.hand.length:0})),
+    seats:t.seats.map(x=>({id:x.id,name:x.name,chips:users[x.id].chips,in:x.in,folded:x.folded,put:t.phase==='idle'?0:x.put,wins:t.phase==='idle'?0:x.wins,n:x.hand?x.hand.length:0})),
     hand:s&&t.phase!=='idle'&&t.phase!=='azi'&&(s.looked||t.phase==='play')?s.hand:null,
-    looked:!!(s&&s.looked),mine:!!s&&cur===s,seated:!!s};
+    looked:!!(s&&s.looked),blinded:!!(s&&s.blinded),canDeal:!!s&&dealerOf(t)===s,dealer:(dealerOf(t)||{}).name,mine:!!s&&cur===s,seated:!!s};
 }
 function sync(){
   for(const ws of conns){
@@ -165,9 +168,9 @@ wss.on('connection',ws=>{
     else if(m.a==='join'&&tables[m.id])join(ws,tables[m.id]);
     else if(m.a==='leave'&&t&&t.phase==='idle'){t.seats=t.seats.filter(x=>x.id!==ws.u);ws.t=null;if(!t.seats.length)delete tables[t.id]}
     else if(m.a==='back')ws.t=null;
-    else if(m.a==='start'&&s&&t.phase==='idle')start(t);
+    else if(m.a==='start'&&s&&t.phase==='idle'&&dealerOf(t)===s)start(t);
     else if(m.a==='give'&&ws.u===ADMIN&&users[m.to]){users[m.to].chips=Math.max(0,(m.set?0:users[m.to].chips)+Math.floor(+m.n||0));save()}
-    else if(t&&t.phase==='bid'&&mine)bid(t,s,m);
+    else if(t&&t.phase==='bid'&&mine){const e=bid(t,s,m);if(e)ws.err=e}
     else if(t&&t.phase==='play'&&mine&&m.a==='play')play(t,s,m.i);
     else if(t&&t.phase==='azi'&&m.a==='azi'&&t.offer[ws.u]!=null&&!(ws.u in t.dec)){
       t.dec[ws.u]=!!m.yes&&users[ws.u].chips>=t.offer[ws.u];
