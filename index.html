@@ -33,7 +33,7 @@ function draw(){
   const keep={n:v('n'),amt:v('amt')};
   const A=document.getElementById('a');
   if(S.v==='x'){A.innerHTML='Откройте игру через Telegram-бота';return}
-  A.innerHTML=S.v==='l'?lobby():table();
+  try{A.innerHTML=S.v==='l'?lobby():table()}catch(e){A.innerHTML='Ошибка: '+e.message+'<br><button onclick="send({a:\'back\'})">В лобби</button>'}
   for(const k in keep)if(keep[k]&&document.getElementById(k))document.getElementById(k).value=keep[k];
 }
 function lobby(){
@@ -44,7 +44,7 @@ function lobby(){
   return h;
 }
 function table(){
-  const t=S.t,nm=id=>(t.seats.find(s=>s.id===id)||{}).name;
+  const t=S.t;t.board=t.board||[];const nm=id=>(t.seats.find(s=>s.id===id)||{}).name;
   let h=`<div class=row><button onclick="send({a:'back'})">←</button><b>Стол ${t.id}</b><span class=m>взнос ${t.ante}</span><span style="margin-left:auto">💰 ${S.chips}</span></div>${S.err?`<p>${S.err}</p>`:''}`;
   h+=`<div class=t><div>Банк: <b>${t.pot}</b> ${t.high?`· ставка ${t.high}`:''}</div>`;
   if(t.trump)h+=`<div>Козырь: ${cd(t.trump)}${t.trump.r===8?' <b>Шоха на трассе!</b>':''}</div>`;

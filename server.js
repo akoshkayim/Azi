@@ -147,8 +147,9 @@ function join(ws,t){
 const srv=http.createServer((q,r)=>{r.setHeader('content-type','text/html;charset=utf-8');r.end(fs.readFileSync(__dirname+'/index.html'))});
 const wss=new WebSocketServer({server:srv});
 wss.on('connection',ws=>{
-  conns.add(ws);ws.on('close',()=>conns.delete(ws));
-  ws.on('message',raw=>{
+  conns.add(ws);ws.on('error',()=>{});ws.on('close',()=>conns.delete(ws));
+  ws.on('message',raw=>{try{handle(raw)}catch(e){console.error(e)}});
+  function handle(raw){
     let m;try{m=JSON.parse(raw)}catch{return}
     if(m.a==='auth'){
       const u=auth(m.init)||(DEV&&m.dev?{id:'dev_'+m.dev,name:m.dev}:null);
@@ -160,7 +161,7 @@ wss.on('connection',ws=>{
     }
     if(!ws.u)return;
     const t=ws.t,s=t&&t.seats.find(x=>x.id===ws.u),mine=s&&t.order&&t.order[t.turn]===s;
-    if(m.a==='create'){const id=String(tid++);tables[id]={id,ante:Math.max(1,Math.floor(+m.n)||100),seats:[],phase:'idle',carry:0};join(ws,tables[id])}
+    if(m.a==='create'){const id=String(tid++);tables[id]={id,ante:Math.max(1,Math.floor(+m.n)||100),seats:[],phase:'idle',carry:0,board:[],high:0,order:[],turn:0};join(ws,tables[id])}
     else if(m.a==='join'&&tables[m.id])join(ws,tables[m.id]);
     else if(m.a==='leave'&&t&&t.phase==='idle'){t.seats=t.seats.filter(x=>x.id!==ws.u);ws.t=null;if(!t.seats.length)delete tables[t.id]}
     else if(m.a==='back')ws.t=null;
@@ -173,8 +174,9 @@ wss.on('connection',ws=>{
       if(Object.keys(t.offer).every(id=>id in t.dec))aziGo(t);
     }
     if(t)arm(t);sync();
-  });
+  }
 });
+process.on('uncaughtException',e=>console.error(e));
 srv.listen(E.PORT||3000,()=>console.log('AZI on',E.PORT||3000));
 if(TOKEN)(async function poll(o=0){
   try{
