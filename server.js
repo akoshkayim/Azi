@@ -165,7 +165,7 @@ wss.on('connection',ws=>{
     else if(m.a==='leave'&&t&&t.phase==='idle'){t.seats=t.seats.filter(x=>x.id!==ws.u);ws.t=null;if(!t.seats.length)delete tables[t.id]}
     else if(m.a==='back')ws.t=null;
     else if(m.a==='start'&&s&&t.phase==='idle')start(t);
-    else if(m.a==='give'&&ws.u===ADMIN&&users[m.to]){users[m.to].chips=Math.max(0,users[m.to].chips+Math.floor(+m.n||0));save()}
+    else if(m.a==='give'&&ws.u===ADMIN&&users[m.to]){users[m.to].chips=Math.max(0,(m.set?0:users[m.to].chips)+Math.floor(+m.n||0));save()}
     else if(t&&t.phase==='bid'&&mine)bid(t,s,m);
     else if(t&&t.phase==='play'&&mine&&m.a==='play')play(t,s,m.i);
     else if(t&&t.phase==='azi'&&m.a==='azi'&&t.offer[ws.u]!=null&&!(ws.u in t.dec)){

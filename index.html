@@ -11,21 +11,21 @@ input{background:#000;color:var(--fg);border:1px solid #444;border-radius:10px;p
 .s.on{outline:2px solid var(--gold)}.s.f{opacity:.4}.m{color:#aaa;font-size:13px}
 .c{display:inline-block;background:#f4f4f4;color:#111;border-radius:8px;padding:10px 8px;margin:3px;font-size:20px;font-weight:700;min-width:46px;text-align:center}
 .c.r{color:#c22}.c.ok{outline:3px solid var(--gold)}.c.b{background:#333;color:#333}
-</style></head><body><div id=a></div><script>
+</style></head><body><div id=a><p>Подключение…</p></div><script>
 const tg=Telegram.WebApp;tg.ready();tg.expand();
 const P=new URLSearchParams(location.search);
-let ws,S;
-const send=o=>{if(ws&&ws.readyState===1)ws.send(JSON.stringify(o))};
+let ws,S,last=0,pend=[];
+const send=o=>{if(ws&&ws.readyState===1)ws.send(JSON.stringify(o));else if(o.a!=='ping'&&pend.length<5)pend.push(o)};
 function conn(){
   if(ws&&ws.readyState<2)return;
   ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host);
-  ws.onopen=()=>send({a:'auth',init:tg.initData,dev:P.get('dev'),join:tg.initDataUnsafe&&tg.initDataUnsafe.start_param});
-  ws.onmessage=e=>{S=JSON.parse(e.data);draw()};
+  ws.onopen=()=>{last=Date.now();ws.send(JSON.stringify({a:'auth',init:tg.initData,dev:P.get('dev'),join:tg.initDataUnsafe&&tg.initDataUnsafe.start_param}))};
+  ws.onmessage=e=>{last=Date.now();S=JSON.parse(e.data);draw();pend.splice(0).forEach(o=>ws.send(JSON.stringify(o)))};
   ws.onclose=()=>setTimeout(conn,1500);
 }
 conn();
-setInterval(()=>send({a:'ping'}),20000);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)conn()});
+setInterval(()=>{send({a:'ping'});if(ws&&ws.readyState===1&&Date.now()-last>20000)ws.close()},8000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){if(ws&&ws.readyState===1)ws.close();else conn()}});
 const SU=['♠','♥','♦'],RK=['6','7','8','9','10','В','Д','К','Т'];
 const cd=(c,i,ok)=>`<div class="c ${c.s?'r':''} ${ok?'ok':''}" ${ok?`onclick="send({a:'play',i:${i}})"`:''}>${RK[c.r]}${SU[c.s]}</div>`;
 const v=id=>(document.getElementById(id)||{}).value;
@@ -40,7 +40,7 @@ function lobby(){
   let h=`<h2>♠ АЗИ</h2><div>Ваши фишки: <b>${S.chips}</b></div>${S.err?`<p>${S.err}</p>`:''}<h3>Столы</h3>`;
   h+=S.tables.map(t=>`<div class=row style="margin:6px 0"><span>Стол ${t.id} · взнос ${t.ante} · ${t.n}/8</span><button onclick="send({a:'join',id:'${t.id}'})">Сесть</button></div>`).join('')||'<p class=m>Столов нет</p>';
   h+=`<div class=row><input id=n type=number value=100><button class=g onclick="send({a:'create',n:+v('n')})">Создать стол</button></div>`;
-  if(S.admin)h+=`<h3>Админ: выдача фишек</h3><input id=amt type=number placeholder="сумма (+/-)">`+S.users.map(u=>`<div class=row style="margin:6px 0"><span>${u.name} · ${u.chips}</span><button onclick="send({a:'give',to:'${u.id}',n:+v('amt')})">Выдать</button></div>`).join('');
+  if(S.admin)h+=`<h3>Админ: выдача фишек</h3><input id=amt type=number placeholder="сумма (+/-)">`+S.users.map(u=>`<div class=row style="margin:6px 0"><span>${u.name} · ${u.chips}</span><button onclick="send({a:'give',to:'${u.id}',n:+v('amt')})">+ Выдать</button><button class=d onclick="send({a:'give',to:'${u.id}',n:-v('amt')})">− Забрать</button><button onclick="send({a:'give',to:'${u.id}',n:+v('amt'),set:1})">= Задать</button></div>`).join('');
   return h;
 }
 function table(){
