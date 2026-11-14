@@ -14,10 +14,18 @@ input{background:#000;color:var(--fg);border:1px solid #444;border-radius:10px;p
 </style></head><body><div id=a></div><script>
 const tg=Telegram.WebApp;tg.ready();tg.expand();
 const P=new URLSearchParams(location.search);
-const ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host);
-const send=o=>ws.send(JSON.stringify(o));let S;
-ws.onopen=()=>send({a:'auth',init:tg.initData,dev:P.get('dev'),join:tg.initDataUnsafe&&tg.initDataUnsafe.start_param});
-ws.onmessage=e=>{S=JSON.parse(e.data);draw()};
+let ws,S;
+const send=o=>{if(ws&&ws.readyState===1)ws.send(JSON.stringify(o))};
+function conn(){
+  if(ws&&ws.readyState<2)return;
+  ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host);
+  ws.onopen=()=>send({a:'auth',init:tg.initData,dev:P.get('dev'),join:tg.initDataUnsafe&&tg.initDataUnsafe.start_param});
+  ws.onmessage=e=>{S=JSON.parse(e.data);draw()};
+  ws.onclose=()=>setTimeout(conn,1500);
+}
+conn();
+setInterval(()=>send({a:'ping'}),20000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)conn()});
 const SU=['♠','♥','♦'],RK=['6','7','8','9','10','В','Д','К','Т'];
 const cd=(c,i,ok)=>`<div class="c ${c.s?'r':''} ${ok?'ok':''}" ${ok?`onclick="send({a:'play',i:${i}})"`:''}>${RK[c.r]}${SU[c.s]}</div>`;
 const v=id=>(document.getElementById(id)||{}).value;
