@@ -8,7 +8,7 @@ button{background:var(--card);color:var(--fg);border:1px solid #444;border-radiu
 button.g{background:var(--gold);color:#111;border:0;font-weight:600}button.d{background:#4a1515}
 input{background:#000;color:var(--fg);border:1px solid #444;border-radius:10px;padding:10px;width:110px;font-size:16px}
 .t{background:#3a0f12;border-radius:16px;padding:10px;margin:8px 0}.s{background:var(--card);border-radius:12px;padding:8px 10px;min-width:44%;flex:1}
-.s.on{outline:2px solid var(--gold)}.s.f{opacity:.4}.m{color:#aaa;font-size:13px}
+.s.on{outline:3px solid #3ddc84;background:#14532d}.felt.mine{background:radial-gradient(#1f8a45,#0f4a22)!important;border-color:#3ddc84!important}.s.f{opacity:.4}.m{color:#aaa;font-size:13px}
 .c{display:inline-block;background:#f4f4f4;color:#111;border-radius:8px;padding:10px 8px;margin:3px;font-size:20px;font-weight:700;min-width:46px;text-align:center}
 .c.r{color:#c22}.c.ok{outline:3px solid var(--gold)}.c.b{background:#333;color:#333}
 
@@ -21,14 +21,28 @@ input{background:#000;color:var(--fg);border:1px solid #444;border-radius:10px;p
 </style></head><body><div id=a><p>Подключение…</p></div><script>
 const tg=Telegram.WebApp;tg.ready();tg.expand();
 const P=new URLSearchParams(location.search);
+const VER='v6';
 let AC=null,snd=true,wasMine=false;try{snd=localStorage.getItem('snd')!=='0'}catch(e){}
-function unlock(){try{if(!AC)AC=new (window.AudioContext||window.webkitAudioContext)();if(AC.state==='suspended')AC.resume()}catch(e){}}
-['touchstart','click'].forEach(ev=>document.addEventListener(ev,unlock,{passive:true}));
-function beep(){ // «тың»: колокольчик на вашу очередь
-  try{unlock();if(AC){const t0=AC.currentTime;[[1319,0.5],[2637,0.22],[3951,0.08]].forEach(([f,a])=>{const o=AC.createOscillator(),g=AC.createGain();o.type='sine';o.frequency.value=f;o.connect(g);g.connect(AC.destination);g.gain.setValueAtTime(0.0001,t0);g.gain.exponentialRampToValueAtTime(a,t0+0.01);g.gain.exponentialRampToValueAtTime(0.0001,t0+0.9);o.start(t0);o.stop(t0+0.95)})}}catch(e){}
+let DING=null,unl=false;
+function mkDing(){ // короткий колокольчик «тың» в виде WAV
+  const sr=22050,n=Math.floor(sr*0.9),b=new ArrayBuffer(44+n*2),d=new DataView(b),w=(o,s)=>[...s].forEach((c,i)=>d.setUint8(o+i,c.charCodeAt(0)));
+  w(0,'RIFF');d.setUint32(4,36+n*2,true);w(8,'WAVEfmt ');d.setUint32(16,16,true);d.setUint16(20,1,true);d.setUint16(22,1,true);d.setUint32(24,sr,true);d.setUint32(28,sr*2,true);d.setUint16(32,2,true);d.setUint16(34,16,true);w(36,'data');d.setUint32(40,n*2,true);
+  for(let i=0;i<n;i++){const t=i/sr,v=(Math.sin(6.2832*1319*t)*0.6+Math.sin(6.2832*2637*t)*0.25+Math.sin(6.2832*3951*t)*0.1)*Math.exp(-t*5)*Math.min(1,t*200);d.setInt16(44+i*2,v*0.8*32767,true)}
+  return URL.createObjectURL(new Blob([b],{type:'audio/wav'}));
+}
+function unlock(){ // разблокировка звука первым касанием (требование iOS)
+  try{if(!AC)AC=new (window.AudioContext||window.webkitAudioContext)();if(AC.state==='suspended')AC.resume()}catch(e){}
+  if(!unl){unl=true;try{DING=new Audio(mkDing());DING.preload='auto';DING.muted=true;const p=DING.play(),done=()=>{try{DING.pause();DING.currentTime=0;DING.muted=false}catch(e){}};if(p&&p.then)p.then(done).catch(()=>{unl=false});else done()}catch(e){unl=false}}
+}
+['touchstart','touchend','click'].forEach(ev=>document.addEventListener(ev,unlock,{passive:true}));
+function webBeep(){try{unlock();if(AC){const t0=AC.currentTime;[[1319,0.5],[2637,0.22],[3951,0.08]].forEach(([f,a])=>{const o=AC.createOscillator(),g=AC.createGain();o.type='sine';o.frequency.value=f;o.connect(g);g.connect(AC.destination);g.gain.setValueAtTime(0.0001,t0);g.gain.exponentialRampToValueAtTime(a,t0+0.01);g.gain.exponentialRampToValueAtTime(0.0001,t0+0.9);o.start(t0);o.stop(t0+0.95)})}}catch(e){}}
+function beep(){ // «тың»: ваша очередь
+  let ok=false;
+  try{if(DING&&!DING.muted){DING.currentTime=0;const p=DING.play();if(p&&p.catch)p.catch(webBeep);ok=true}}catch(e){}
+  if(!ok)webBeep();
   try{tg.HapticFeedback.notificationOccurred('warning')}catch(e){}
 }
-function attn(){const x=!!(S&&S.v==='t'&&(S.t.mine||S.t.canVote||S.t.offer!=null));if(x&&!wasMine&&snd)beep();wasMine=x}
+function attn(){const x=!!(S&&S.v==='t'&&(S.t.mine||S.t.canVote||S.t.offer!=null));if(x&&!wasMine&&snd)beep();wasMine=x;try{document.body.style.boxShadow=x?'inset 0 0 0 5px #3ddc84':''}catch(e){}}
 function toggleSnd(){snd=!snd;try{localStorage.setItem('snd',snd?'1':'0')}catch(e){}if(snd)beep();draw()}
 let watchId=null;const go=o=>{watchId=o.a==='watch'?o.id:null;send(o)};
 let ws,S,last=0,pend=[],chain=Promise.resolve(),ms=null,pcs={},voiceOn=false,muted=false;
@@ -91,6 +105,7 @@ function lobby(){
     h+='<h3>Касса</h3>'+S.users.filter(u=>u.issued).map(u=>`<div class=ks><span>${u.name}</span><b>${u.issued}</b></div>`).join('');
     h+=`<div class="ks az"><span>АЗИ (комиссия)</span><b>${S.azi||0}</b></div><div class=m style="margin-top:4px">Всего выдано: ${S.users.reduce((a,u)=>a+(u.issued||0),0)}</div>`;
   }
+  h+=`<div class=m style="margin-top:14px">версия ${VER}</div>`;
   return h;
 }
 function table(){
@@ -98,15 +113,15 @@ function table(){
   const nm=id=>(t.seats.find(s=>s.id===id)||{}).name,cs=c=>cd(c).replace('class="c ','class="c sm '),cm=c=>cd(c).replace('class="c ','class="c md ');
   const n=t.seats.length,me=Math.max(0,t.seats.findIndex(s=>s.id===t.me));
   let h=`<div class=row><button onclick="voiceStop();go({a:'back'})">←</button><b>Стол ${t.id}</b><span class=m>взнос ${t.ante}</span>${t.watchers?`<span class=m>👁${t.watchers}</span>`:''}${t.seated?(voiceOn?`<button onclick="toggleMute()">${muted?'🔇':'🎙'}</button><button class=d onclick="voiceStop()">✕</button>`:`<button onclick="voiceStart()">🎤 Голос</button>`):''}<button onclick="toggleSnd()">${snd?'🔔':'🔕'}</button><span style="margin-left:auto">💰 ${S.chips}</span></div>${S.err?`<p>${S.err}</p>`:''}`;
-  h+=`<div class=tb><div class=felt></div><div class=mid><div class=m>БАНК</div><div class=pot>${t.pot}</div>${t.high?`<div class=m>ставка ${t.high}</div>`:''}`;
+  h+=`<div class=tb><div class="felt ${t.mine?'mine':''}"></div><div class=mid><div class=m>БАНК</div><div class=pot>${t.pot}</div>${t.high?`<div class=m>ставка ${t.high}</div>`:''}`;
   if(t.trump)h+=`<div class=m style="margin-top:4px">Козырь ${cm(t.trump)}${t.trump.r===8?'<br><b>Шоха на трассе!</b>':''}</div>`;
   if(t.board.length){const bc=t.board.length>4?cs:cm;h+='<div style="margin-top:4px">'+t.board.map(b=>`<span style="display:inline-block;margin:1px;${t.win===b.id?'outline:2px solid #e9b949;border-radius:8px;':''}"><span class=m>${nm(b.id)}</span><br>${bc(b.c)}</span>`).join('')+'</div>'+(t.win?`<div class=m><b style="color:#e9b949">${nm(t.win)} берёт</b></div>`:'')}
   h+='</div>';
   t.seats.forEach((s,i)=>{const a=(90+(i-me)*360/n)*Math.PI/180,x=50+40*Math.cos(a),y=50+42*Math.sin(a);
     h+=`<div class="s ${t.turn===s.id?'on':''} ${s.folded?'f':''}" style="left:${x}%;top:${y}%"><b>${s.voice?'🎙':''}${s.white?'⚪ ':''}${s.name}${s.dealer?' (сдаёт)':''}</b><div class=m>${s.chips}${s.wins?' · 🏆'+s.wins:''}${s.put?' · ст.'+s.put:''}</div></div>`});
-  h+=`</div><div class=m>${t.mine?'<b style="color:#e9b949">Ваш ход</b> · ':(t.turn?'Ходит '+nm(t.turn)+' · ':'')}${t.log||''}</div>`;
+  h+=`</div><div class=m>${t.mine?'<b style="color:#3ddc84">Ваш ход</b> · ':(t.turn?'Ходит '+nm(t.turn)+' · ':'')}${t.log||''}</div>`;
   const bg=x=>x.replace('class="c ','class="c big ');
-  if(!t.seated)h+='<div class=m style="text-align:center;margin:8px">👁 Вы наблюдаете. Сесть можно между конами.</div>';else h+='<h3 style="text-align:center">Ваши карты</h3><div style="text-align:center">'+(t.hand?t.hand.map((c,i)=>bg(cd(c,i,t.mine&&t.phase==='play'))).join(''):(t.phase==='bid'?'<div class="c b big">?</div>'.repeat(3):''))+'</div>';
+  if(!t.seated)h+='<div class=m style="text-align:center;margin:8px">👁 Вы наблюдаете. Сесть можно между конами.</div>';else if(t.hand||t.phase==='bid'||t.phase==='play')h+='<h3 style="text-align:center">Ваши карты</h3><div style="text-align:center">'+(t.hand?t.hand.map((c,i)=>bg(cd(c,i,t.mine&&t.phase==='play'))).join(''):(t.phase==='bid'?'<div class="c b big">?</div>'.repeat(3):''))+'</div>';
   h+='<div class=row style="margin-top:10px;justify-content:center">';
   if(t.phase==='idle'){
     if(t.seated){
@@ -136,6 +151,6 @@ function table(){
     else h+=`<span class=m>Игроки АЗИ решают…</span>`;
   }
   if(t.phase==='azi'&&t.offer!=null)h+=`<button class=g onclick="send({a:'azi',yes:1})">Войти в АЗИ за ${t.offer}</button><button onclick="send({a:'azi',yes:0})">Пас</button>`;
-  return h+'</div>';
+  return h+'</div><div class=m style="text-align:center;margin-top:12px">версия '+VER+'</div>';
 }
 </script></body></html>
