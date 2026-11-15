@@ -6,7 +6,8 @@ if(ADMIN&&!users[ADMIN])users[ADMIN]={name:'Админ',chips:0};
 let meta={azi:0};try{meta=JSON.parse(fs.readFileSync('meta.json'))}catch{}
 const save=()=>{fs.writeFileSync('db.json',JSON.stringify(users));fs.writeFileSync('meta.json',JSON.stringify(meta))};
 function giveChips(id,n,set){const u=users[id],old=u.chips;u.chips=Math.max(0,(set?0:u.chips)+Math.floor(+n||0));u.issued=(u.issued||0)+(u.chips-old)}
-const SVER='s7';
+const SVER='s8';
+const ADMIN_USERNAME=(E.ADMIN_USERNAME||'').replace('@','');
 const TRICK_MS=4000; // сколько карты взятки лежат на столе
 const AZI_KEEP=4000,AZI_JOIN=2000,WHITE_ANTE=500; // правила: остаток на кону при дележе АЗИ, вход в АЗИ, кон белого
 let ICE=[{urls:'stun:stun.l.google.com:19302'}];try{if(E.ICE)ICE=JSON.parse(E.ICE)}catch{}
@@ -193,7 +194,7 @@ function view(t,u){
 function sync(){
   for(const ws of conns){
     if(!ws.u||ws.readyState!==1)continue;
-    ws.send(JSON.stringify(ws.t?{v:'t',ver:SVER,ice:ICE,t:view(ws.t,ws.u),chips:users[ws.u].chips,err:ws.err}:{v:'l',ver:SVER,chips:users[ws.u].chips,err:ws.err,
+    ws.send(JSON.stringify(ws.t?{v:'t',ver:SVER,ice:ICE,t:view(ws.t,ws.u),chips:users[ws.u].chips,err:ws.err}:{v:'l',ver:SVER,adm:ADMIN_USERNAME,chips:users[ws.u].chips,err:ws.err,
       tables:Object.values(tables).map(t=>({id:t.id,ante:t.ante,n:t.seats.length})),admin:ws.u===ADMIN,azi:ws.u===ADMIN?(meta.azi||0):undefined,
       users:ws.u===ADMIN?Object.entries(users).map(([id,u])=>({id,name:u.name,chips:u.chips,issued:u.issued||0})):undefined}));
     ws.err='';
@@ -250,12 +251,32 @@ wss.on('connection',ws=>{
 });
 process.on('uncaughtException',e=>console.error(e));
 srv.listen(E.PORT||3000,()=>console.log('AZI on',E.PORT||3000));
+const tgApi=(m,b)=>fetch(`https://api.telegram.org/bot${TOKEN}/${m}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(b)}).then(r=>r.json()).catch(()=>({}));
+const botMenu=()=>({inline_keyboard:[[{text:'Играть',web_app:{url:APP}}],[ADMIN_USERNAME?{text:'✉️ Написать админу',url:'https://t.me/'+ADMIN_USERNAME}:{text:'✉️ Связаться с админом',callback_data:'contact'}]]});
 if(TOKEN)(async function poll(o=0){
   try{
     const r=await(await fetch(`https://api.telegram.org/bot${TOKEN}/getUpdates?timeout=30&offset=${o}`)).json();
-    for(const u of r.result||[]){o=u.update_id+1;const m=u.message;
-      if(m&&m.text&&m.text.startsWith('/start'))fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`,{method:'POST',headers:{'content-type':'application/json'},
-        body:JSON.stringify({chat_id:m.chat.id,text:'АЗИ — играть с друзьями',reply_markup:{inline_keyboard:[[{text:'Играть',web_app:{url:APP}}]]}})});}
+    for(const u of r.result||[]){
+      o=u.update_id+1;
+      if(u.callback_query){
+        const q=u.callback_query;tgApi('answerCallbackQuery',{callback_query_id:q.id});
+        if(q.data==='contact')tgApi('sendMessage',{chat_id:q.message.chat.id,text:'Напишите сообщение прямо сюда, я передам его админу. Ответ придёт в этот чат.'});
+        continue;
+      }
+      const m=u.message;if(!m||!m.text||!m.from)continue;
+      const from=String(m.from.id);
+      if(m.text.startsWith('/start')){tgApi('sendMessage',{chat_id:m.chat.id,text:'АЗИ — играть с друзьями',reply_markup:botMenu()});continue}
+      if(ADMIN&&from===ADMIN){ // админ отвечает игроку через Reply на его сообщение
+        const rt=m.reply_to_message&&m.reply_to_message.text,id=rt&&(rt.match(/\[id:(\d+)\]/)||[])[1];
+        if(id)tgApi('sendMessage',{chat_id:id,text:'✉️ Админ: '+m.text});
+        else tgApi('sendMessage',{chat_id:m.chat.id,text:'Чтобы ответить игроку, нажмите Reply (ответить) на его сообщение.'});
+        continue;
+      }
+      if(ADMIN){
+        tgApi('sendMessage',{chat_id:ADMIN,text:`✉️ ${m.from.first_name||''}${m.from.username?' (@'+m.from.username+')':''} [id:${from}]\n${m.text}`});
+        tgApi('sendMessage',{chat_id:m.chat.id,text:'Передано админу ✅'});
+      }
+    }
   }catch{await new Promise(r=>setTimeout(r,3000))}
   poll(o);
 })();
