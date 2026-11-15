@@ -3,7 +3,9 @@ const {WebSocketServer}=require('ws');
 const E=process.env,TOKEN=E.BOT_TOKEN||'',ADMIN=String(E.ADMIN_ID||''),DEV=E.DEV==='1',APP=E.APP_URL||'',BOT=E.BOT_USER||'';
 let users={};try{users=JSON.parse(fs.readFileSync('db.json'))}catch{}
 if(ADMIN&&!users[ADMIN])users[ADMIN]={name:'Админ',chips:0};
-const save=()=>fs.writeFileSync('db.json',JSON.stringify(users));
+let meta={azi:0};try{meta=JSON.parse(fs.readFileSync('meta.json'))}catch{}
+const save=()=>{fs.writeFileSync('db.json',JSON.stringify(users));fs.writeFileSync('meta.json',JSON.stringify(meta))};
+function giveChips(id,n,set){const u=users[id],old=u.chips;u.chips=Math.max(0,(set?0:u.chips)+Math.floor(+n||0));u.issued=(u.issued||0)+(u.chips-old)}
 const AZI_KEEP=4000,AZI_JOIN=2000,WHITE_ANTE=500; // правила: остаток на кону при дележе АЗИ, вход в АЗИ, кон белого
 let ICE=[{urls:'stun:stun.l.google.com:19302'}];try{if(E.ICE)ICE=JSON.parse(E.ICE)}catch{}
 const tables={};let tid=1;const conns=new Set();
@@ -43,7 +45,7 @@ function start(t,azi){
   const d=[];for(let s=0;s<3;s++)for(let r=0;r<9;r++)d.push({s,r}); // 27 карт, без крестей
   for(let i=d.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[d[i],d[j]]=[d[j],d[i]]}
   ins.forEach(s=>s.hand=d.splice(0,3));
-  t.trump=d[0];t.board=[];t.lastTrick=null;t.high=0;t.lastRaise=null;t.asked=[];t.option=false;t.optDone=false;t.blindOpen=true;t.lead=t.order[0].id;t.acted=new Set();t.turn=0;
+  t.trump=d[0];t.board=[];t.lastTrick=null;t.resolving=null;t.high=0;t.lastRaise=null;t.asked=[];t.option=false;t.optDone=false;t.blindOpen=true;t.lead=t.order[0].id;t.acted=new Set();t.turn=0;
   t.phase='bid';t.log=azi?'АЗИ: новые торги':(wh.length?'Белый: '+wh.map(s=>s.name).join(', ')+'. Кон по '+WHITE_ANTE:'Торги');
   const f=t.order.findIndex(s=>!s.allin);if(f<0)play0(t);else t.turn=f;
   save();
@@ -112,7 +114,7 @@ function legal(t,s,i){
   return true;
 }
 function play(t,s,i){
-  if(!legal(t,s,i))return;
+  if(t.resolving||!legal(t,s,i))return;
   const c=s.hand.splice(i,1)[0];t.board.push({id:s.id,c});
   if(t.board.length<act(t).length){
     let k=t.turn;do{k=(k+1)%t.order.length}while(t.order[k].folded);t.turn=k;return;
@@ -121,10 +123,16 @@ function play(t,s,i){
   const pw=c=>c.s===tr.s?20+(tr.r===8&&c.r===0?100:c.r):c.s===ls?c.r:-1; // «Шоха»: туз-козырь => козырная шестёрка старшая
   const best=t.board.reduce((a,b)=>pw(b.c)>pw(a.c)?b:a);
   const w=t.order.find(x=>x.id===best.id);w.wins++;
-  t.lastTrick={board:t.board,w:w.id};t.board=[];
-  if(w.wins>=2)return finish(t,w);
-  if(!w.hand.length)return azi(t,w.id);
-  t.turn=t.order.indexOf(w);t.log='Ходит '+w.name;
+  t.lastTrick={board:t.board,w:w.id};
+  t.resolving=w.id;t.turn=t.order.indexOf(w);t.log=w.name+' берёт взятку';
+  setTimeout(()=>{ // карты остаются на столе 2.5 секунды
+    if(t.resolving!==w.id)return;
+    t.resolving=null;t.board=[];
+    if(w.wins>=2)finish(t,w);
+    else if(!w.hand.length)azi(t,w.id);
+    else{t.turn=t.order.indexOf(w);t.log='Ходит '+w.name}
+    arm(t);sync();
+  },2500);
 }
 function finish(t,w){
   const W=w.white?Infinity:w.paid;/* белый забирает весь банк */let get=t.carry;
@@ -133,7 +141,7 @@ function finish(t,w){
 }
 function azi(t,wid){
   let p=pot(t);const c=Math.min(500,p);
-  if(ADMIN)users[ADMIN].chips+=c;p-=c;t.carry=p;
+  meta.azi=(meta.azi||0)+c;p-=c;t.carry=p; // комиссия копится в «АЗИ» кассы
   t.con=t.order.filter(s=>!s.folded&&s.wins===1).map(s=>s.id);
   t.aziDealer=wid;t.vote={};t.phase='azivote';
   t.log='АЗИ! Банк '+p+' (комиссия '+c+'). Игроки АЗИ решают: разделить или оставить на кону';
@@ -170,9 +178,9 @@ function arm(t){
   },45000);
 }
 function view(t,u){
-  const s=t.seats.find(x=>x.id===u),cur=(t.phase==='bid'||t.phase==='play')&&t.order[t.turn];
+  const s=t.seats.find(x=>x.id===u),cur=(t.phase==='bid'||t.phase==='play')&&!t.resolving&&t.order[t.turn];
   return{id:t.id,ante:t.ante,phase:t.phase,pot:t.phase==='idle'?0:pot(t),high:t.phase==='idle'?0:t.high,trump:t.phase!=='idle'?t.trump:null,
-    turn:cur&&cur.id,board:t.board,last:t.lastTrick,log:t.log,me:u,inv:BOT,
+    turn:cur&&cur.id,board:t.board,win:t.resolving||null,last:t.lastTrick,log:t.log,me:u,inv:BOT,
     offer:t.phase==='azi'&&t.offer[u]!=null&&!(u in t.dec)?t.offer[u]:null,
     seats:t.seats.map(x=>({id:x.id,name:x.name,chips:users[x.id].chips,in:x.in,folded:x.folded,put:t.phase==='idle'?0:x.put,white:!!x.white,voice:!!(t.voice&&t.voice.has(x.id)),dealer:t.phase!=='idle'&&x.id===t.dealerId,wins:t.phase==='idle'?0:x.wins,n:x.hand?x.hand.length:0})),
     hand:s&&t.phase!=='idle'&&t.phase!=='azi'&&(s.looked||t.phase==='play')?s.hand:null,
@@ -182,8 +190,8 @@ function sync(){
   for(const ws of conns){
     if(!ws.u||ws.readyState!==1)continue;
     ws.send(JSON.stringify(ws.t?{v:'t',ice:ICE,t:view(ws.t,ws.u),chips:users[ws.u].chips,err:ws.err}:{v:'l',chips:users[ws.u].chips,err:ws.err,
-      tables:Object.values(tables).map(t=>({id:t.id,ante:t.ante,n:t.seats.length})),admin:ws.u===ADMIN,
-      users:ws.u===ADMIN?Object.entries(users).map(([id,u])=>({id,name:u.name,chips:u.chips})):undefined}));
+      tables:Object.values(tables).map(t=>({id:t.id,ante:t.ante,n:t.seats.length})),admin:ws.u===ADMIN,azi:ws.u===ADMIN?(meta.azi||0):undefined,
+      users:ws.u===ADMIN?Object.entries(users).map(([id,u])=>({id,name:u.name,chips:u.chips,issued:u.issued||0})):undefined}));
     ws.err='';
   }
 }
@@ -226,7 +234,7 @@ wss.on('connection',ws=>{
     else if(m.a==='ask'&&t&&s&&t.phase==='bid'&&t.lastRaise&&t.lastRaise.id!==ws.u&&s.in&&!s.folded&&!s.white&&!(t.asked||[]).includes(ws.u))t.asked=[...(t.asked||[]),ws.u];
     else if(m.a==='without'&&t&&s&&t.phase==='bid'){const e=without(t,s);if(e)ws.err=e}
     else if(t&&t.phase==='azivote'&&m.a==='vote'&&t.con.includes(ws.u)&&!(ws.u in t.vote)){t.vote[ws.u]=!!m.split;if(t.con.every(id=>id in t.vote))aziVote(t)}
-    else if(m.a==='give'&&ws.u===ADMIN&&users[m.to]){users[m.to].chips=Math.max(0,(m.set?0:users[m.to].chips)+Math.floor(+m.n||0));save()}
+    else if(m.a==='give'&&ws.u===ADMIN&&users[m.to]){giveChips(m.to,m.n,m.set);save()}
     else if(t&&t.phase==='bid'&&mine){const e=bid(t,s,m);if(e)ws.err=e}
     else if(t&&t.phase==='play'&&mine&&m.a==='play')play(t,s,m.i);
     else if(t&&t.phase==='azi'&&m.a==='azi'&&t.offer[ws.u]!=null&&!(ws.u in t.dec)){
