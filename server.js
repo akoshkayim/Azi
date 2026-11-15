@@ -5,6 +5,7 @@ let users={};try{users=JSON.parse(fs.readFileSync('db.json'))}catch{}
 if(ADMIN&&!users[ADMIN])users[ADMIN]={name:'Админ',chips:0};
 const save=()=>fs.writeFileSync('db.json',JSON.stringify(users));
 const AZI_KEEP=4000,AZI_JOIN=2000,WHITE_ANTE=500; // правила: остаток на кону при дележе АЗИ, вход в АЗИ, кон белого
+let ICE=[{urls:'stun:stun.l.google.com:19302'}];try{if(E.ICE)ICE=JSON.parse(E.ICE)}catch{}
 const tables={};let tid=1;const conns=new Set();
 const dealerOf=t=>t.seats.find(x=>x.id===t.winner)||t.seats[0];
 const act=t=>t.seats.filter(s=>s.in&&!s.folded);
@@ -42,7 +43,7 @@ function start(t,azi){
   const d=[];for(let s=0;s<3;s++)for(let r=0;r<9;r++)d.push({s,r}); // 27 карт, без крестей
   for(let i=d.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[d[i],d[j]]=[d[j],d[i]]}
   ins.forEach(s=>s.hand=d.splice(0,3));
-  t.trump=d[0];t.board=[];t.lastTrick=null;t.high=0;t.lastRaise=null;t.blindOpen=true;t.lead=t.order[0].id;t.acted=new Set();t.turn=0;
+  t.trump=d[0];t.board=[];t.lastTrick=null;t.high=0;t.lastRaise=null;t.asked=[];t.blindOpen=true;t.lead=t.order[0].id;t.acted=new Set();t.turn=0;
   t.phase='bid';t.log=azi?'АЗИ: новые торги':(wh.length?'Белый: '+wh.map(s=>s.name).join(', ')+'. Кон по '+WHITE_ANTE:'Торги');
   const f=t.order.findIndex(s=>!s.allin);if(f<0)play0(t);else t.turn=f;
   save();
@@ -69,14 +70,15 @@ function bid(t,s,m){
     const L={id:s.id,prevHigh:t.high,prevActed:[...t.acted]};
     if(m.a==='blind'){s.blinded=true;s.looked=true}else closeBlind(t);
     pay(t,s,n);
-    if(s.put>t.high){t.lastRaise=L;t.high=s.put;t.lead=s.id;t.acted=new Set()}
+    if(s.put>t.high){t.lastRaise=L;t.asked=[];t.high=s.put;t.lead=s.id;t.acted=new Set()}
   }else return;
   t.acted.add(s.id);adv(t);
 }
 function without(t,s){ // «Без»: игрок отменяет свою последнюю прибавку, уравнивает прежнюю ставку и ходит первым
   const L=t.lastRaise;if(!L||L.id!==s.id)return 'Нечего отменять';
+  if(!(t.asked&&t.asked.length))return 'Никто не просит «Без»';
   t.seats.forEach(x=>{if(x.in&&x.put>L.prevHigh){const d=x.put-L.prevHigh;users[x.id].chips+=d;x.paid-=d;x.put=L.prevHigh;if(!x.white&&users[x.id].chips>0)x.allin=false}});
-  t.high=L.prevHigh;t.lead=s.id;t.acted=new Set([...L.prevActed,s.id]);t.lastRaise=null;
+  t.high=L.prevHigh;t.lead=s.id;t.acted=new Set([...L.prevActed,s.id]);t.lastRaise=null;t.asked=[];
   adv(t,true);
 }
 function adv(t,stay){
@@ -90,7 +92,7 @@ function adv(t,stay){
   t.turn=i;
 }
 function play0(t){
-  t.phase='play';t.lastRaise=null;t.order.forEach(s=>s.looked=true);
+  t.phase='play';t.lastRaise=null;t.asked=[];t.order.forEach(s=>s.looked=true);
   const nf=t.order.filter(s=>!s.folded);
   const L=nf.find(s=>s.id===t.lead)||nf.slice().sort((a,b)=>b.put-a.put)[0];
   t.turn=t.order.indexOf(L);t.log='Ходит '+L.name;
@@ -138,7 +140,7 @@ function aziVote(t){
     t.log='АЗИ разделили: по '+each+' каждому, на кону '+t.carry;
   }else t.log='АЗИ: вся сумма остаётся на кону: '+t.carry;
   const p=t.carry;t.offer={};t.dec={};
-  t.seats.forEach(s=>{if(s.in&&!t.con.includes(s.id))t.offer[s.id]=split?AZI_JOIN:(s.folded?p:Math.ceil(p/2))});
+  t.seats.forEach(s=>{if(s.in&&!t.con.includes(s.id))t.offer[s.id]=split?AZI_JOIN:Math.ceil(p/2)});
   t.phase='azi';
   if(!Object.keys(t.offer).length)aziGo(t);
 }
@@ -166,19 +168,21 @@ function view(t,u){
   return{id:t.id,ante:t.ante,phase:t.phase,pot:t.phase==='idle'?0:pot(t),high:t.phase==='idle'?0:t.high,trump:t.phase!=='idle'?t.trump:null,
     turn:cur&&cur.id,board:t.board,last:t.lastTrick,log:t.log,me:u,inv:BOT,
     offer:t.phase==='azi'&&t.offer[u]!=null&&!(u in t.dec)?t.offer[u]:null,
-    seats:t.seats.map(x=>({id:x.id,name:x.name,chips:users[x.id].chips,in:x.in,folded:x.folded,put:t.phase==='idle'?0:x.put,white:!!x.white,dealer:t.phase!=='idle'&&x.id===t.dealerId,wins:t.phase==='idle'?0:x.wins,n:x.hand?x.hand.length:0})),
+    seats:t.seats.map(x=>({id:x.id,name:x.name,chips:users[x.id].chips,in:x.in,folded:x.folded,put:t.phase==='idle'?0:x.put,white:!!x.white,voice:!!(t.voice&&t.voice.has(x.id)),dealer:t.phase!=='idle'&&x.id===t.dealerId,wins:t.phase==='idle'?0:x.wins,n:x.hand?x.hand.length:0})),
     hand:s&&t.phase!=='idle'&&t.phase!=='azi'&&(s.looked||t.phase==='play')?s.hand:null,
-    looked:!!(s&&s.looked),canBlind:!!s&&t.phase==='bid'&&!!t.blindOpen&&!s.looked&&!s.blinded&&s.id!==t.dealerId,canWithout:!!s&&t.phase==='bid'&&!!t.lastRaise&&t.lastRaise.id===u,canVote:t.phase==='azivote'&&!!t.con&&t.con.includes(u)&&!(u in t.vote),isDealer:t.dealerId===u,azi:{keep:AZI_KEEP,join:AZI_JOIN},blinded:!!(s&&s.blinded),canDeal:!!s&&dealerOf(t)===s,dealer:(dealerOf(t)||{}).name,mine:!!s&&cur===s,seated:!!s};
+    looked:!!(s&&s.looked),canBlind:!!s&&t.phase==='bid'&&!!t.blindOpen&&!s.looked&&!s.blinded&&s.id!==t.dealerId,canWithout:!!s&&t.phase==='bid'&&!!t.lastRaise&&t.lastRaise.id===u&&!!(t.asked&&t.asked.length),canAsk:!!s&&t.phase==='bid'&&!!t.lastRaise&&t.lastRaise.id!==u&&s.in&&!s.folded&&!s.white&&!(t.asked||[]).includes(u),asked:(t.asked||[]).map(id=>(t.seats.find(x=>x.id===id)||{}).name),canVote:t.phase==='azivote'&&!!t.con&&t.con.includes(u)&&!(u in t.vote),isDealer:t.dealerId===u,azi:{keep:AZI_KEEP,join:AZI_JOIN},blinded:!!(s&&s.blinded),canDeal:!!s&&dealerOf(t)===s,dealer:(dealerOf(t)||{}).name,mine:!!s&&cur===s,seated:!!s};
 }
 function sync(){
   for(const ws of conns){
     if(!ws.u||ws.readyState!==1)continue;
-    ws.send(JSON.stringify(ws.t?{v:'t',t:view(ws.t,ws.u),chips:users[ws.u].chips,err:ws.err}:{v:'l',chips:users[ws.u].chips,err:ws.err,
+    ws.send(JSON.stringify(ws.t?{v:'t',ice:ICE,t:view(ws.t,ws.u),chips:users[ws.u].chips,err:ws.err}:{v:'l',chips:users[ws.u].chips,err:ws.err,
       tables:Object.values(tables).map(t=>({id:t.id,ante:t.ante,n:t.seats.length})),admin:ws.u===ADMIN,
       users:ws.u===ADMIN?Object.entries(users).map(([id,u])=>({id,name:u.name,chips:u.chips})):undefined}));
     ws.err='';
   }
 }
+function vsend(t,except,msg){for(const o of conns)if(o.u&&o.t===t&&o.u!==except&&o.readyState===1)o.send(JSON.stringify(msg))}
+function vleave(ws){const t=ws.t;if(!t||!t.voice||t.voice.get(ws.u)!==ws)return;t.voice.delete(ws.u);vsend(t,ws.u,{v:'sig',type:'left',id:ws.u})}
 function join(ws,t){
   if(!t.seats.find(s=>s.id===ws.u)){
     if(t.phase!=='idle'||t.seats.length>=8){ws.err='Нельзя сесть: идёт игра или стол полон';return}
@@ -189,7 +193,7 @@ function join(ws,t){
 const srv=http.createServer((q,r)=>{r.setHeader('content-type','text/html;charset=utf-8');r.end(fs.readFileSync(__dirname+'/index.html'))});
 const wss=new WebSocketServer({server:srv});
 wss.on('connection',ws=>{
-  conns.add(ws);ws.on('error',()=>{});ws.on('close',()=>conns.delete(ws));
+  conns.add(ws);ws.on('error',()=>{});ws.on('close',()=>{conns.delete(ws);vleave(ws);sync()});
   ws.on('message',raw=>{try{handle(raw)}catch(e){console.error(e)}});
   function handle(raw){
     let m;try{m=JSON.parse(raw)}catch{return}
@@ -203,11 +207,16 @@ wss.on('connection',ws=>{
     }
     if(!ws.u)return;
     const t=ws.t,s=t&&t.seats.find(x=>x.id===ws.u),mine=s&&t.order&&t.order[t.turn]===s;
+    if(m.a==='ping'){ws.send('{"v":"p"}');return} // пинг не должен сбрасывать таймер хода
+    if(m.a==='sig'){const o=t&&t.voice&&t.voice.get(ws.u)===ws&&t.voice.get(m.to);if(o&&o.readyState===1)o.send(JSON.stringify({v:'sig',type:'data',from:ws.u,data:m.data}));return}
+    if(m.a==='vjoin'&&t&&s){t.voice=t.voice||new Map();const peers=[...t.voice.keys()].filter(id=>id!==ws.u);t.voice.set(ws.u,ws);ws.send(JSON.stringify({v:'sig',type:'peers',peers}));sync();return}
+    if(m.a==='vleave'){vleave(ws);sync();return}
     if(m.a==='create'){const id=String(tid++);tables[id]={id,ante:Math.max(1,Math.floor(+m.n)||100),seats:[],phase:'idle',carry:0,board:[],high:0,order:[],turn:0};join(ws,tables[id])}
     else if(m.a==='join'&&tables[m.id])join(ws,tables[m.id]);
-    else if(m.a==='leave'&&t&&t.phase==='idle'){t.seats=t.seats.filter(x=>x.id!==ws.u);ws.t=null;if(!t.seats.length)delete tables[t.id]}
-    else if(m.a==='back')ws.t=null;
+    else if(m.a==='leave'&&t&&t.phase==='idle'){vleave(ws);t.seats=t.seats.filter(x=>x.id!==ws.u);ws.t=null;if(!t.seats.length)delete tables[t.id]}
+    else if(m.a==='back'){vleave(ws);ws.t=null}
     else if(m.a==='start'&&s&&t.phase==='idle'&&dealerOf(t)===s)start(t);
+    else if(m.a==='ask'&&t&&s&&t.phase==='bid'&&t.lastRaise&&t.lastRaise.id!==ws.u&&s.in&&!s.folded&&!s.white&&!(t.asked||[]).includes(ws.u))t.asked=[...(t.asked||[]),ws.u];
     else if(m.a==='without'&&t&&s&&t.phase==='bid'){const e=without(t,s);if(e)ws.err=e}
     else if(t&&t.phase==='azivote'&&m.a==='vote'&&t.con.includes(ws.u)&&!(ws.u in t.vote)){t.vote[ws.u]=!!m.split;if(t.con.every(id=>id in t.vote))aziVote(t)}
     else if(m.a==='give'&&ws.u===ADMIN&&users[m.to]){users[m.to].chips=Math.max(0,(m.set?0:users[m.to].chips)+Math.floor(+m.n||0));save()}
