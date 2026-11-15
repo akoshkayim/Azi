@@ -58,7 +58,7 @@ function table(){
   if(t.board.length)h+='<div style="margin-top:4px">'+t.board.map(b=>`<span style="display:inline-block"><span class=m>${nm(b.id)}</span><br>${cs(b.c)}</span>`).join('')+'</div>';
   h+='</div>';
   t.seats.forEach((s,i)=>{const a=(90+(i-me)*360/n)*Math.PI/180,x=50+40*Math.cos(a),y=50+42*Math.sin(a);
-    h+=`<div class="s ${t.turn===s.id?'on':''} ${s.folded?'f':''}" style="left:${x}%;top:${y}%"><b>${s.name}</b><div class=m>${s.chips}${s.wins?' · 🏆'+s.wins:''}${s.put?' · ст.'+s.put:''}</div></div>`});
+    h+=`<div class="s ${t.turn===s.id?'on':''} ${s.folded?'f':''}" style="left:${x}%;top:${y}%"><b>${s.white?'⚪ ':''}${s.name}${s.dealer?' (сдаёт)':''}</b><div class=m>${s.chips}${s.wins?' · 🏆'+s.wins:''}${s.put?' · ст.'+s.put:''}</div></div>`});
   h+=`</div><div class=m>${t.mine?'<b style="color:#e9b949">Ваш ход</b> · ':(t.turn?'Ходит '+nm(t.turn)+' · ':'')}${t.log||''}</div>`;
   h+='<h3>Ваши карты</h3>';
   h+=t.hand?t.hand.map((c,i)=>cd(c,i,t.mine&&t.phase==='play')).join(''):(t.phase==='bid'?'<div class="c b">?</div>'.repeat(3):'');
@@ -74,8 +74,18 @@ function table(){
   if(t.phase==='bid'&&t.mine){
     const my=t.seats.find(x=>x.id===t.me)||{put:0},need=Math.max(0,t.high-my.put);
     h+=`<input id=amt type=number placeholder="сумма">`;
-    if(!t.looked)h+=`<button class=g onclick="send({a:'blind',n:+v('amt')})">Ход</button><button onclick="send({a:'look'})">Ашу</button><div class=m style="width:100%">Ход: вслепую, сумма ×2, должна быть выше текущей ставки (${t.high}). Ашу: открыть карты.</div>`;
-    else h+=`<button onclick="send({a:'call'})">Тең${need?' '+need:''}</button><button class=g onclick="send({a:'raise',n:+v('amt')})">Ары</button><button class=d onclick="send({a:'fold'})">Пас</button><div class=m style="width:100%">Ары: ваша ставка (${my.put}) + сумма должна быть выше ${t.high}.</div>`;
+    if(!t.looked){
+      if(t.canBlind)h+=`<button class=g onclick="send({a:'blind',n:+v('amt')})">Ход</button>`;
+      h+=`<button onclick="send({a:'look'})">Ашу</button><div class=m style="width:100%">${t.canBlind?'Ход: вслепую, сумма ×2, выше текущей ставки ('+t.high+'). ':(t.isDealer?'Сдающий не может ходить вслепую. ':'')}Ашу: открыть карты.</div>`;
+    }else{
+      if(t.high>0)h+=`<button onclick="send({a:'call'})">Тең${need?' '+need:''}</button>`;
+      h+=`<button class=g onclick="send({a:'raise',n:+v('amt')})">Ары</button><button class=d onclick="send({a:'fold'})">Пас</button><div class=m style="width:100%">Ары: ваша ставка (${my.put}) + сумма должна быть выше ${t.high}.</div>`;
+    }
+  }
+  if(t.phase==='bid'&&t.canWithout)h+=`<button class=d onclick="send({a:'without'})">Без</button>`;
+  if(t.phase==='azivote'){
+    if(t.canVote)h+=`<div class=m style="width:100%">Вы в АЗИ. Разделить: на кону останется ${t.azi.keep}, остальное поровну между игроками АЗИ (нужно согласие всех).</div><button class=g onclick="send({a:'vote',split:1})">Разделить</button><button onclick="send({a:'vote',split:0})">Оставить на кону</button>`;
+    else h+=`<span class=m>Игроки АЗИ решают…</span>`;
   }
   if(t.phase==='azi'&&t.offer!=null)h+=`<button class=g onclick="send({a:'azi',yes:1})">Войти в АЗИ за ${t.offer}</button><button onclick="send({a:'azi',yes:0})">Пас</button>`;
   return h+'</div>';
