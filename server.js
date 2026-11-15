@@ -6,6 +6,7 @@ if(ADMIN&&!users[ADMIN])users[ADMIN]={name:'Админ',chips:0};
 let meta={azi:0};try{meta=JSON.parse(fs.readFileSync('meta.json'))}catch{}
 const save=()=>{fs.writeFileSync('db.json',JSON.stringify(users));fs.writeFileSync('meta.json',JSON.stringify(meta))};
 function giveChips(id,n,set){const u=users[id],old=u.chips;u.chips=Math.max(0,(set?0:u.chips)+Math.floor(+n||0));u.issued=(u.issued||0)+(u.chips-old)}
+const SVER='s7';
 const TRICK_MS=4000; // сколько карты взятки лежат на столе
 const AZI_KEEP=4000,AZI_JOIN=2000,WHITE_ANTE=500; // правила: остаток на кону при дележе АЗИ, вход в АЗИ, кон белого
 let ICE=[{urls:'stun:stun.l.google.com:19302'}];try{if(E.ICE)ICE=JSON.parse(E.ICE)}catch{}
@@ -46,7 +47,7 @@ function start(t,azi){
   const d=[];for(let s=0;s<3;s++)for(let r=0;r<9;r++)d.push({s,r}); // 27 карт, без крестей
   for(let i=d.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[d[i],d[j]]=[d[j],d[i]]}
   ins.forEach(s=>s.hand=d.splice(0,3));
-  t.trump=d[0];t.board=[];t.lastTrick=null;t.resolving=null;t.high=0;t.lastRaise=null;t.asked=[];t.option=false;t.optDone=false;t.blindOpen=true;t.lead=t.order[0].id;t.acted=new Set();t.turn=0;
+  t.trump=d[0];t.board=[];t.lastTrick=null;t.resolving=null;t.high=0;t.lastRaise=null;t.asked=[];t.option=false;t.optDone=false;t.hadRaise=false;t.blindOpen=true;t.lead=t.order[0].id;t.acted=new Set();t.turn=0;
   t.phase='bid';t.log=azi?'АЗИ: новые торги':(wh.length?'Белый: '+wh.map(s=>s.name).join(', ')+'. Кон по '+WHITE_ANTE:'Торги');
   const f=t.order.findIndex(s=>!s.allin);if(f<0)play0(t);else t.turn=f;
   save();
@@ -75,7 +76,8 @@ function bid(t,s,m){
     const L={id:s.id,prevHigh:t.high,prevActed:[...t.acted]};
     if(m.a==='blind'){s.blinded=true;s.looked=true}else closeBlind(t);
     pay(t,s,n);
-    if(s.put>t.high){t.lastRaise=m.a==='raise'?L:null;t.asked=[]; // «Без» можно просить только после повышения (Ары), не после Хода
+    if(s.put>t.high){if(m.a==='raise')t.hadRaise=true; // после любого Ары шанса повысить «в конце» уже нет
+    t.lastRaise=m.a==='raise'?L:null;t.asked=[]; // «Без» можно просить только после повышения (Ары), не после Хода
     t.option=false;t.high=s.put;t.lead=s.id;t.acted=new Set()}
   }else return;
   t.acted.add(s.id);adv(t);
@@ -93,7 +95,7 @@ function adv(t,stay){
   const needs=s=>!s.allin&&!(t.acted.has(s.id)&&s.put===t.high);
   if(!r.some(needs)){
     const L=r.find(s=>s.id===t.lead); // все уравняли: тот, кто дал ход, может ещё повысить (Ары)
-    if(L&&!L.allin&&!L.white&&!t.optDone&&t.high>0){t.option=true;t.optDone=true; /* право повысить даётся один раз за кон */t.turn=t.order.indexOf(L);t.log=L.name+': все уравняли. Ары или играть';return}
+    if(L&&!L.allin&&!L.white&&!t.optDone&&!t.hadRaise&&t.high>0){t.option=true;t.optDone=true; /* право повысить даётся один раз за кон */t.turn=t.order.indexOf(L);t.log=L.name+': все уравняли. Ары или играть';return}
     t.option=false;return play0(t);
   }
   const cur=t.order[t.turn];
@@ -191,7 +193,7 @@ function view(t,u){
 function sync(){
   for(const ws of conns){
     if(!ws.u||ws.readyState!==1)continue;
-    ws.send(JSON.stringify(ws.t?{v:'t',ice:ICE,t:view(ws.t,ws.u),chips:users[ws.u].chips,err:ws.err}:{v:'l',chips:users[ws.u].chips,err:ws.err,
+    ws.send(JSON.stringify(ws.t?{v:'t',ver:SVER,ice:ICE,t:view(ws.t,ws.u),chips:users[ws.u].chips,err:ws.err}:{v:'l',ver:SVER,chips:users[ws.u].chips,err:ws.err,
       tables:Object.values(tables).map(t=>({id:t.id,ante:t.ante,n:t.seats.length})),admin:ws.u===ADMIN,azi:ws.u===ADMIN?(meta.azi||0):undefined,
       users:ws.u===ADMIN?Object.entries(users).map(([id,u])=>({id,name:u.name,chips:u.chips,issued:u.issued||0})):undefined}));
     ws.err='';

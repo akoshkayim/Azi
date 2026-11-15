@@ -21,7 +21,7 @@ input{background:#000;color:var(--fg);border:1px solid #444;border-radius:10px;p
 </style></head><body><div id=a><p>Подключение…</p></div><script>
 const tg=Telegram.WebApp;tg.ready();tg.expand();
 const P=new URLSearchParams(location.search);
-const VER='v6';
+const VER='v7';
 let AC=null,snd=true,wasMine=false;try{snd=localStorage.getItem('snd')!=='0'}catch(e){}
 let DING=null,unl=false;
 function mkDing(){ // короткий колокольчик «тың» в виде WAV
@@ -105,7 +105,7 @@ function lobby(){
     h+='<h3>Касса</h3>'+S.users.filter(u=>u.issued).map(u=>`<div class=ks><span>${u.name}</span><b>${u.issued}</b></div>`).join('');
     h+=`<div class="ks az"><span>АЗИ (комиссия)</span><b>${S.azi||0}</b></div><div class=m style="margin-top:4px">Всего выдано: ${S.users.reduce((a,u)=>a+(u.issued||0),0)}</div>`;
   }
-  h+=`<div class=m style="margin-top:14px">версия ${VER}</div>`;
+  h+=`<div class=m style="margin-top:14px">версия ${VER}${S.ver?' · сервер '+S.ver:''}</div>`;
   return h;
 }
 function table(){
@@ -151,6 +151,6 @@ function table(){
     else h+=`<span class=m>Игроки АЗИ решают…</span>`;
   }
   if(t.phase==='azi'&&t.offer!=null)h+=`<button class=g onclick="send({a:'azi',yes:1})">Войти в АЗИ за ${t.offer}</button><button onclick="send({a:'azi',yes:0})">Пас</button>`;
-  return h+'</div><div class=m style="text-align:center;margin-top:12px">версия '+VER+'</div>';
+  return h+'</div><div class=m style="text-align:center;margin-top:12px">версия '+VER+(S.ver?' · сервер '+S.ver:'')+'</div>';
 }
 </script></body></html>
