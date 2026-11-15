@@ -20,6 +20,7 @@ input{background:#000;color:var(--fg);border:1px solid #444;border-radius:10px;p
 </style></head><body><div id=a><p>Подключение…</p></div><script>
 const tg=Telegram.WebApp;tg.ready();tg.expand();
 const P=new URLSearchParams(location.search);
+let watchId=null;const go=o=>{watchId=o.a==='watch'?o.id:null;send(o)};
 let ws,S,last=0,pend=[],chain=Promise.resolve(),ms=null,pcs={},voiceOn=false,muted=false;
 async function voiceStart(){
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){alert('Микрофон недоступен в этом приложении. Можно говорить через голосовой чат группы Telegram.');return}
@@ -53,7 +54,7 @@ const send=o=>{if(ws&&ws.readyState===1)ws.send(JSON.stringify(o));else if(o.a!=
 function conn(){
   if(ws&&ws.readyState<2)return;
   ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host);
-  ws.onopen=()=>{last=Date.now();ws.send(JSON.stringify({a:'auth',init:tg.initData,dev:P.get('dev'),join:tg.initDataUnsafe&&tg.initDataUnsafe.start_param}));if(voiceOn){Object.keys(pcs).forEach(closePc);ws.send(JSON.stringify({a:'vjoin'}))}};
+  ws.onopen=()=>{last=Date.now();ws.send(JSON.stringify({a:'auth',init:tg.initData,dev:P.get('dev'),join:tg.initDataUnsafe&&tg.initDataUnsafe.start_param}));if(watchId)ws.send(JSON.stringify({a:'watch',id:watchId}));if(voiceOn){Object.keys(pcs).forEach(closePc);ws.send(JSON.stringify({a:'vjoin'}))}};
   ws.onmessage=e=>{last=Date.now();const m=JSON.parse(e.data);if(m.v==='p')return;if(m.v==='sig'){chain=chain.then(()=>voiceSig(m)).catch(()=>{});return}S=m;draw();pend.splice(0).forEach(o=>ws.send(JSON.stringify(o)))};
   ws.onclose=()=>setTimeout(conn,1500);
 }
@@ -72,8 +73,8 @@ function draw(){
 }
 function lobby(){
   let h=`<h2>♠ АЗИ</h2><div>Ваши фишки: <b>${S.chips}</b></div>${S.err?`<p>${S.err}</p>`:''}<h3>Столы</h3>`;
-  h+=S.tables.map(t=>`<div class=row style="margin:6px 0"><span>Стол ${t.id} · взнос ${t.ante} · ${t.n}/8</span><button onclick="send({a:'join',id:'${t.id}'})">Сесть</button></div>`).join('')||'<p class=m>Столов нет</p>';
-  h+=`<div class=row><input id=n type=number value=100><button class=g onclick="send({a:'create',n:+v('n')})">Создать стол</button></div>`;
+  h+=S.tables.map(t=>`<div class=row style="margin:6px 0"><span>Стол ${t.id} · взнос ${t.ante} · ${t.n}/8</span><button onclick="go({a:'join',id:'${t.id}'})">Сесть</button><button onclick="go({a:'watch',id:'${t.id}'})">👁 Смотреть</button></div>`).join('')||'<p class=m>Столов нет</p>';
+  h+=`<div class=row><input id=n type=number value=100><button class=g onclick="go({a:'create',n:+v('n')})">Создать стол</button></div>`;
   if(S.admin)h+=`<h3>Админ: выдача фишек</h3><input id=amt type=number placeholder="сумма (+/-)">`+S.users.map(u=>`<div class=row style="margin:6px 0"><span>${u.name} · ${u.chips}</span><button onclick="send({a:'give',to:'${u.id}',n:+v('amt')})">+ Выдать</button><button class=d onclick="send({a:'give',to:'${u.id}',n:-v('amt')})">− Забрать</button><button onclick="send({a:'give',to:'${u.id}',n:+v('amt'),set:1})">= Задать</button></div>`).join('');
   return h;
 }
@@ -81,7 +82,7 @@ function table(){
   const t=S.t;t.board=t.board||[];
   const nm=id=>(t.seats.find(s=>s.id===id)||{}).name,cs=c=>cd(c).replace('class="c ','class="c sm '),cm=c=>cd(c).replace('class="c ','class="c md ');
   const n=t.seats.length,me=Math.max(0,t.seats.findIndex(s=>s.id===t.me));
-  let h=`<div class=row><button onclick="voiceStop();send({a:'back'})">←</button><b>Стол ${t.id}</b><span class=m>взнос ${t.ante}</span>${t.seated?(voiceOn?`<button onclick="toggleMute()">${muted?'🔇':'🎙'}</button><button class=d onclick="voiceStop()">✕</button>`:`<button onclick="voiceStart()">🎤 Голос</button>`):''}<span style="margin-left:auto">💰 ${S.chips}</span></div>${S.err?`<p>${S.err}</p>`:''}`;
+  let h=`<div class=row><button onclick="voiceStop();go({a:'back'})">←</button><b>Стол ${t.id}</b><span class=m>взнос ${t.ante}</span>${t.watchers?`<span class=m>👁${t.watchers}</span>`:''}${t.seated?(voiceOn?`<button onclick="toggleMute()">${muted?'🔇':'🎙'}</button><button class=d onclick="voiceStop()">✕</button>`:`<button onclick="voiceStart()">🎤 Голос</button>`):''}<span style="margin-left:auto">💰 ${S.chips}</span></div>${S.err?`<p>${S.err}</p>`:''}`;
   h+=`<div class=tb><div class=felt></div><div class=mid><div class=m>БАНК</div><div class=pot>${t.pot}</div>${t.high?`<div class=m>ставка ${t.high}</div>`:''}`;
   if(t.trump)h+=`<div class=m style="margin-top:4px">Козырь ${cm(t.trump)}${t.trump.r===8?'<br><b>Шоха на трассе!</b>':''}</div>`;
   if(t.board.length)h+='<div style="margin-top:4px">'+t.board.map(b=>`<span style="display:inline-block"><span class=m>${nm(b.id)}</span><br>${cs(b.c)}</span>`).join('')+'</div>';
@@ -90,20 +91,21 @@ function table(){
     h+=`<div class="s ${t.turn===s.id?'on':''} ${s.folded?'f':''}" style="left:${x}%;top:${y}%"><b>${s.voice?'🎙':''}${s.white?'⚪ ':''}${s.name}${s.dealer?' (сдаёт)':''}</b><div class=m>${s.chips}${s.wins?' · 🏆'+s.wins:''}${s.put?' · ст.'+s.put:''}</div></div>`});
   h+=`</div><div class=m>${t.mine?'<b style="color:#e9b949">Ваш ход</b> · ':(t.turn?'Ходит '+nm(t.turn)+' · ':'')}${t.log||''}</div>`;
   const bg=x=>x.replace('class="c ','class="c big ');
-  h+='<h3 style="text-align:center">Ваши карты</h3><div style="text-align:center">'+(t.hand?t.hand.map((c,i)=>bg(cd(c,i,t.mine&&t.phase==='play'))).join(''):(t.phase==='bid'?'<div class="c b big">?</div>'.repeat(3):''))+'</div>';
+  if(!t.seated)h+='<div class=m style="text-align:center;margin:8px">👁 Вы наблюдаете. Сесть можно между конами.</div>';else h+='<h3 style="text-align:center">Ваши карты</h3><div style="text-align:center">'+(t.hand?t.hand.map((c,i)=>bg(cd(c,i,t.mine&&t.phase==='play'))).join(''):(t.phase==='bid'?'<div class="c b big">?</div>'.repeat(3):''))+'</div>';
   h+='<div class=row style="margin-top:10px;justify-content:center">';
   if(t.phase==='idle'){
     if(t.seated){
       if(t.canDeal)h+=`<button class=g onclick="send({a:'start'})">Раздать</button>`;
       else h+=`<span class=m>Раздаёт: ${t.dealer}</span>`;
-      h+=`<button onclick="send({a:'leave'})">Выйти</button>`;
-    }else h+=`<button class=g onclick="send({a:'join',id:'${t.id}'})">Сесть</button>`;
+      h+=`<button onclick="go({a:'leave'})">Выйти</button>`;
+    }else h+=`<button class=g onclick="go({a:'join',id:'${t.id}'})">Сесть</button>`;
     h+=`<button onclick="tg.openTelegramLink('https://t.me/share/url?url='+encodeURIComponent('https://t.me/${t.inv}?startapp=${t.id}')+'&text='+encodeURIComponent('Садись играть в АЗИ'))">Пригласить друзей</button>`;
   }
   if(t.phase==='bid'&&t.mine){
     const my=t.seats.find(x=>x.id===t.me)||{put:0},need=Math.max(0,t.high-my.put);
     h+=`<input id=amt type=number placeholder="сумма">`;
-    if(!t.looked){
+    if(t.option)h+=`<button class=g onclick="send({a:'raise',n:+v('amt')})">Ары</button><button onclick="send({a:'done'})">Играть</button><div class=m style="width:100%">Все уравняли вашу ставку. Можете повысить (Ары) или начать игру.</div>`;
+    else if(!t.looked){
       if(t.canBlind)h+=`<button class=g onclick="send({a:'blind',n:+v('amt')})">Ход</button>`;
       h+=`<button onclick="send({a:'look'})">Ашу</button><div class=m style="width:100%">${t.canBlind?'Ход: вслепую, сумма ×2, выше текущей ставки ('+t.high+'). ':(t.isDealer?'Сдающий не может ходить вслепую. ':'')}Ашу: открыть карты.</div>`;
     }else{
