@@ -104,7 +104,7 @@ function table(){
   if(t.phase==='bid'&&t.mine){
     const my=t.seats.find(x=>x.id===t.me)||{put:0},need=Math.max(0,t.high-my.put);
     h+=`<input id=amt type=number placeholder="сумма">`;
-    if(t.option)h+=`<button class=g onclick="send({a:'raise',n:+v('amt')})">Ары</button><button onclick="send({a:'done'})">Играть</button><div class=m style="width:100%">Все уравняли вашу ставку. Можете повысить (Ары) или начать игру.</div>`;
+    if(t.option)h+=`<button class=g onclick="send({a:'raise',n:+v('amt')})">Ары</button><button onclick="send({a:'done'})">Играть</button><div class=m style="width:100%">Все уравняли вашу ставку. Один раз можно повысить (Ары) или начать игру.</div>`;
     else if(!t.looked){
       if(t.canBlind)h+=`<button class=g onclick="send({a:'blind',n:+v('amt')})">Ход</button>`;
       h+=`<button onclick="send({a:'look'})">Ашу</button><div class=m style="width:100%">${t.canBlind?'Ход: вслепую, сумма ×2, выше текущей ставки ('+t.high+'). ':(t.isDealer?'Сдающий не может ходить вслепую. ':'')}Ашу: открыть карты.</div>`;

@@ -72,7 +72,7 @@ function bid(t,s,m){
     const L={id:s.id,prevHigh:t.high,prevActed:[...t.acted]};
     if(m.a==='blind'){s.blinded=true;s.looked=true}else closeBlind(t);
     pay(t,s,n);
-    if(s.put>t.high){t.lastRaise=L;t.asked=[];t.option=false;t.optDone=false;t.high=s.put;t.lead=s.id;t.acted=new Set()}
+    if(s.put>t.high){t.lastRaise=L;t.asked=[];t.option=false;t.high=s.put;t.lead=s.id;t.acted=new Set()}
   }else return;
   t.acted.add(s.id);adv(t);
 }
@@ -89,7 +89,7 @@ function adv(t,stay){
   const needs=s=>!s.allin&&!(t.acted.has(s.id)&&s.put===t.high);
   if(!r.some(needs)){
     const L=r.find(s=>s.id===t.lead); // все уравняли: тот, кто дал ход, может ещё повысить (Ары)
-    if(L&&!L.allin&&!L.white&&!t.optDone&&t.high>0){t.option=true;t.turn=t.order.indexOf(L);t.log=L.name+': все уравняли. Ары или играть';return}
+    if(L&&!L.allin&&!L.white&&!t.optDone&&t.high>0){t.option=true;t.optDone=true; /* право повысить даётся один раз за кон */t.turn=t.order.indexOf(L);t.log=L.name+': все уравняли. Ары или играть';return}
     t.option=false;return play0(t);
   }
   const cur=t.order[t.turn];
