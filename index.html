@@ -21,7 +21,7 @@ input{background:#000;color:var(--fg);border:1px solid #444;border-radius:10px;p
 </style></head><body><div id=a><p>Подключение…</p></div><script>
 const tg=Telegram.WebApp;tg.ready();tg.expand();
 const P=new URLSearchParams(location.search);
-const VER='v8';
+const VER='v9';
 let AC=null,snd=true,wasMine=false;try{snd=localStorage.getItem('snd')!=='0'}catch(e){}
 let DING=null,unl=false;
 function mkDing(){ // короткий колокольчик «тың» в виде WAV
@@ -119,7 +119,7 @@ function table(){
   if(t.board.length){const bc=t.board.length>4?cs:cm;h+='<div style="margin-top:4px">'+t.board.map(b=>`<span style="display:inline-block;margin:1px;${t.win===b.id?'outline:2px solid #e9b949;border-radius:8px;':''}"><span class=m>${nm(b.id)}</span><br>${bc(b.c)}</span>`).join('')+'</div>'+(t.win?`<div class=m><b style="color:#e9b949">${nm(t.win)} берёт</b></div>`:'')}
   h+='</div>';
   t.seats.forEach((s,i)=>{const a=(90+(i-me)*360/n)*Math.PI/180,x=50+40*Math.cos(a),y=50+42*Math.sin(a);
-    h+=`<div class="s ${t.turn===s.id?'on':''} ${s.folded?'f':''}" style="left:${x}%;top:${y}%"><b>${s.voice?'🎙':''}${s.white?'⚪ ':''}${s.name}${s.dealer?' (сдаёт)':''}</b><div class=m>${s.chips}${s.wins?' · 🏆'+s.wins:''}${s.put?' · ст.'+s.put:''}</div></div>`});
+    h+=`<div class="s ${t.turn===s.id?'on':''} ${s.folded?'f':''}" style="left:${x}%;top:${y}%"><b>${s.voice?'🎙':''}${s.white?'⚪ ':''}${s.name}${s.dealer?' (сдаёт)':''}</b><div class=m>${s.chips}${s.wins?' · 🏆'+s.wins:''}${s.put?' · ст.'+s.put:''}</div>${s.short?`<div style="color:#ff6b6b;font-size:12px">−${s.short} ${s.shortTo}</div>`:''}</div>`});
   h+=`</div><div class=m>${t.mine?'<b style="color:#3ddc84">Ваш ход</b> · ':(t.turn?'Ходит '+nm(t.turn)+' · ':'')}${t.log||''}</div>`;
   const bg=x=>x.replace('class="c ','class="c big ');
   if(!t.seated)h+='<div class=m style="text-align:center;margin:8px">👁 Вы наблюдаете. Сесть можно между конами.</div>';else if(t.hand||t.phase==='bid'||t.phase==='play')h+='<h3 style="text-align:center">Ваши карты</h3><div style="text-align:center">'+(t.hand?t.hand.map((c,i)=>bg(cd(c,i,t.mine&&t.phase==='play'))).join(''):(t.phase==='bid'?'<div class="c b big">?</div>'.repeat(3):''))+'</div>';
@@ -138,7 +138,7 @@ function table(){
     if(t.option)h+=`<button class=g onclick="send({a:'raise',n:+v('amt')})">Ары</button><button onclick="send({a:'done'})">Играть</button><div class=m style="width:100%">Все уравняли вашу ставку. Один раз можно повысить (Ары) или начать игру.</div>`;
     else if(!t.looked){
       if(t.canBlind)h+=`<button class=g onclick="send({a:'blind',n:+v('amt')})">Ход</button>`;
-      h+=`<button onclick="send({a:'look'})">Ашу</button><div class=m style="width:100%">${t.canBlind?'Ход: вслепую, сумма ×2, выше текущей ставки ('+t.high+'). ':(t.isDealer?'Сдающий не может ходить вслепую. ':'')}Ашу: открыть карты.</div>`;
+      h+=`<button onclick="send({a:'look'})">Ашу</button><div class=m style="width:100%">${t.canBlind?'Ход: вслепую. Списывается введённая сумма, а в ставку она считается вдвое; ставка должна стать выше '+t.high+'. ':(t.isDealer?'Сдающий не может ходить вслепую. ':'')}Ашу: открыть карты.</div>`;
     }else{
       if(t.high>0)h+=`<button onclick="send({a:'call'})">Тең${need?' '+need:''}</button>`;
       h+=`<button class=g onclick="send({a:'raise',n:+v('amt')})">Ары</button><button class=d onclick="send({a:'fold'})">Пас</button><div class=m style="width:100%">Ары: ваша ставка (${my.put}) + сумма должна быть выше ${t.high}.</div>`;

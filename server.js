@@ -6,7 +6,8 @@ if(ADMIN&&!users[ADMIN])users[ADMIN]={name:'Админ',chips:0};
 let meta={azi:0};try{meta=JSON.parse(fs.readFileSync('meta.json'))}catch{}
 const save=()=>{fs.writeFileSync('db.json',JSON.stringify(users));fs.writeFileSync('meta.json',JSON.stringify(meta))};
 function giveChips(id,n,set){const u=users[id],old=u.chips;u.chips=Math.max(0,(set?0:u.chips)+Math.floor(+n||0));u.issued=(u.issued||0)+(u.chips-old)}
-const SVER='s8';
+const SVER='s9';
+const TURN_MS=45000,DEAL_MS=180000,KICK_AFTER=2; // ход 45 с; не раздал за 3 мин; 2 пропуска хода подряд = удаление со стола
 const ADMIN_USERNAME=(E.ADMIN_USERNAME||'').replace('@','');
 const TRICK_MS=4000; // сколько карты взятки лежат на столе
 const AZI_KEEP=4000,AZI_JOIN=2000,WHITE_ANTE=500; // правила: остаток на кону при дележе АЗИ, вход в АЗИ, кон белого
@@ -24,8 +25,7 @@ function auth(init){
   if(crypto.createHmac('sha256',key).update(s).digest('hex')!==h)return null;
   const u=JSON.parse(p.get('user'));return{id:String(u.id),name:u.first_name||u.username||'Игрок'};
 }
-function pay(t,s,n){const d=Math.max(0,Math.min(n,users[s.id].chips));users[s.id].chips-=d;s.paid+=d;s.put+=d;if(users[s.id].chips<=0)s.allin=true}
-
+function pay(t,s,n,k=1){const d=Math.max(0,Math.min(n,users[s.id].chips));users[s.id].chips-=d;s.paid+=d;s.put+=d*k;s.bonus=(s.bonus||0)+d*(k-1);if(users[s.id].chips<=0)s.allin=true}
 function start(t,azi){
   clearTimeout(t.timer);
   let ins,wh=[];
@@ -37,7 +37,7 @@ function start(t,azi){
     ins=t.seats.filter(s=>reg.includes(s)||wh.includes(s));
     t.carry=0;
   }
-  t.seats.forEach(s=>{s.in=ins.includes(s);s.hand=[];s.put=0;s.paid=0;s.folded=false;s.looked=false;s.allin=false;s.wins=0;s.blinded=false;s.white=azi?(!!s.white&&s.in):wh.includes(s)});
+  t.seats.forEach(s=>{s.in=ins.includes(s);s.hand=[];s.put=0;s.paid=0;s.folded=false;s.looked=false;s.allin=false;s.wins=0;s.blinded=false;s.bonus=0;s.white=azi?(!!s.white&&s.in):wh.includes(s)});
   const did=azi?t.aziDealer:(t.seats.find(x=>x.id===t.winner)?t.winner:t.seats[0].id); // сдающий
   const wi=ins.findIndex(s=>s.id===did);
   t.dealerId=did;
@@ -70,13 +70,13 @@ function bid(t,s,m){
       if(!t.blindOpen)return 'Ход недоступен: кто-то уже уравнял или повысил';
       if(s.id===t.dealerId)return 'Сдающий не может давать ход. Нажмите Ашу';
       if(s.looked||s.blinded)return;
-      n*=2; // ход вслепую считается x2
+      // ход вслепую: списывается введённая сумма, а в ставку она считается вдвое
     }else if(!s.looked)return OPEN;
-    n=Math.min(n,q.chips);
-    if(s.put+n<=t.high&&n<q.chips)return 'Ставка должна быть больше текущей ('+t.high+'). У вас выйдет '+(s.put+n);
+    n=Math.min(n,q.chips);const k=m.a==='blind'?2:1;
+    if(s.put+n*k<=t.high&&n<q.chips)return 'Ставка должна быть больше текущей ('+t.high+'). У вас выйдет '+(s.put+n*k);
     const L={id:s.id,prevHigh:t.high,prevActed:[...t.acted]};
     if(m.a==='blind'){s.blinded=true;s.looked=true}else closeBlind(t);
-    pay(t,s,n);
+    pay(t,s,n,k);
     if(s.put>t.high){if(m.a==='raise')t.hadRaise=true; // после любого Ары шанса повысить «в конце» уже нет
     t.lastRaise=m.a==='raise'?L:null;t.asked=[]; // «Без» можно просить только после повышения (Ары), не после Хода
     t.option=false;t.high=s.put;t.lead=s.id;t.acted=new Set()}
@@ -140,9 +140,11 @@ function play(t,s,i){
   },TRICK_MS);
 }
 function finish(t,w){
-  const W=w.white?Infinity:w.paid;/* белый забирает весь банк */let get=t.carry;
+  const short=w.allin&&!w.white&&w.put<t.high,W=(w.white||!short)?Infinity:w.paid+(w.bonus||0);/* белый и не «короткий» победитель забирают весь банк */let get=t.carry;
   t.seats.forEach(s=>{if(!s.in)return;const m=Math.min(s.paid,W);get+=m;if(s!==w)users[s.id].chips+=s.paid-m}); // пропорция при нехватке фишек
-  users[w.id].chips+=get;t.winner=w.id;t.carry=0;t.phase='idle';t.log=w.name+' забрал банк: '+get;save();
+  users[w.id].chips+=get;t.winner=w.id;t.carry=0;t.phase='idle';const sh=t.seats.filter(x=>x.in&&x!==w&&x.allin&&!x.white&&x.put<t.high).map(x=>x.name+' −'+(t.high-x.put)+' '+w.name);
+  t.log=w.name+' забрал банк: '+get+(sh.length?'. Не хватило фишек: '+sh.join(', '):'')+(short?'. '+w.name+' получил часть банка (не хватило фишек)':'');
+  save();purgeKicked(t);
 }
 function azi(t,wid){
   let p=pot(t);const c=Math.min(500,p);
@@ -169,25 +171,40 @@ function aziGo(t){
   t.seats.forEach(s=>s.in=t.con.includes(s.id)||j.includes(s.id));
   t.winner=null;start(t,true);
 }
+function afk(t,s){if(!s)return;s.afk=(s.afk||0)+1;if(s.afk>=KICK_AFTER)s.kick=true}
+function kickSeat(t,id,why){
+  for(const o of conns)if(o.u===id&&o.t===t){vleave(o);o.t=null;o.err=why}
+  t.seats=t.seats.filter(x=>x.id!==id);
+  if(!t.seats.length)delete tables[t.id];
+}
+function purgeKicked(t){t.seats.filter(x=>x.kick).forEach(x=>kickSeat(t,x.id,'Вы удалены со стола за бездействие'))}
 function arm(t){
-  clearTimeout(t.timer);if(t.phase==='idle')return;
+  clearTimeout(t.timer);if(!tables[t.id])return;
+  if(t.phase==='idle'){ // сдающий не раздаёт: через DEAL_MS удаляем его со стола
+    if(t.seats.length>=2)t.timer=setTimeout(()=>{if(!tables[t.id])return;const d=dealerOf(t);if(d)kickSeat(t,d.id,'Вы удалены со стола: не раздали карты вовремя');arm(t);sync()},DEAL_MS);
+    return;
+  }
+  const cur=t.order&&t.order[t.turn];
+  const wait=((t.phase==='bid'||t.phase==='play')&&!t.resolving&&cur&&cur.afk>=1)?10000:TURN_MS; // уже пропускал ход: ждём только 10 с
   t.timer=setTimeout(()=>{
+    if(!tables[t.id])return;
+    if(t.resolving){arm(t);return}
     if(t.phase==='azivote'){t.con.forEach(id=>{if(!(id in t.vote))t.vote[id]=false});aziVote(t)}
     else if(t.phase==='azi'){for(const id in t.offer)if(!(id in t.dec))t.dec[id]=false;aziGo(t)}
     else{
-      const s=t.order[t.turn];
+      const s=t.order[t.turn];afk(t,s);
       if(t.phase==='bid'){s.looked=true;bid(t,s,{a:t.option?'done':((s.put===t.high&&t.high>0)?'call':'fold')})}
       else play(t,s,s.hand.findIndex((_,k)=>legal(t,s,k)));
     }
     arm(t);sync();
-  },45000);
+  },wait);
 }
 function view(t,u){
   const s=t.seats.find(x=>x.id===u),cur=(t.phase==='bid'||t.phase==='play')&&!t.resolving&&t.order[t.turn];
   return{id:t.id,ante:t.ante,phase:t.phase,pot:t.phase==='idle'?0:pot(t),high:t.phase==='idle'?0:t.high,trump:t.phase!=='idle'?t.trump:null,
     turn:cur&&cur.id,board:t.board,win:t.resolving||null,last:t.lastTrick,log:t.log,me:u,inv:BOT,
     offer:t.phase==='azi'&&t.offer[u]!=null&&!(u in t.dec)?t.offer[u]:null,
-    seats:t.seats.map(x=>({id:x.id,name:x.name,chips:users[x.id].chips,in:x.in,folded:t.phase!=='idle'&&x.folded,put:t.phase==='idle'?0:x.put,white:!!x.white,voice:!!(t.voice&&t.voice.has(x.id)),dealer:t.phase!=='idle'&&x.id===t.dealerId,wins:t.phase==='idle'?0:x.wins,n:x.hand?x.hand.length:0})),
+    seats:t.seats.map(x=>({id:x.id,name:x.name,chips:users[x.id].chips,in:x.in,folded:t.phase!=='idle'&&x.folded,put:t.phase==='idle'?0:x.put,short:(x.in&&!x.folded&&x.allin&&!x.white&&t.phase!=='idle'&&x.put<t.high)?t.high-x.put:0,shortTo:(t.seats.find(y=>y.id===t.lead)||{}).name,white:!!x.white,voice:!!(t.voice&&t.voice.has(x.id)),dealer:t.phase!=='idle'&&x.id===t.dealerId,wins:t.phase==='idle'?0:x.wins,n:x.hand?x.hand.length:0})),
     hand:s&&t.phase!=='idle'&&t.phase!=='azi'&&(s.looked||t.phase==='play')?s.hand:null,
     looked:!!(s&&s.looked),option:t.phase==='bid'&&!!t.option,watchers:[...conns].filter(o=>o.t===t&&o.u&&!t.seats.some(x=>x.id===o.u)).length,canBlind:!!s&&t.phase==='bid'&&!!t.blindOpen&&!s.looked&&!s.blinded&&s.id!==t.dealerId,canWithout:!!s&&t.phase==='bid'&&!!t.lastRaise&&t.lastRaise.id===u&&!!(t.asked&&t.asked.length),canAsk:!!s&&t.phase==='bid'&&!!t.lastRaise&&t.lastRaise.id!==u&&s.in&&!s.folded&&!s.white&&!(t.asked||[]).includes(u),asked:(t.asked||[]).map(id=>(t.seats.find(x=>x.id===id)||{}).name),canVote:t.phase==='azivote'&&!!t.con&&t.con.includes(u)&&!(u in t.vote),isDealer:t.dealerId===u,azi:{keep:AZI_KEEP,join:AZI_JOIN},blinded:!!(s&&s.blinded),canDeal:!!s&&dealerOf(t)===s,dealer:(dealerOf(t)||{}).name,mine:!!s&&cur===s,seated:!!s};
 }
@@ -240,8 +257,8 @@ wss.on('connection',ws=>{
     else if(m.a==='without'&&t&&s&&t.phase==='bid'){const e=without(t,s);if(e)ws.err=e}
     else if(t&&t.phase==='azivote'&&m.a==='vote'&&t.con.includes(ws.u)&&!(ws.u in t.vote)){t.vote[ws.u]=!!m.split;if(t.con.every(id=>id in t.vote))aziVote(t)}
     else if(m.a==='give'&&ws.u===ADMIN&&users[m.to]){giveChips(m.to,m.n,m.set);save()}
-    else if(t&&t.phase==='bid'&&mine){const e=bid(t,s,m);if(e)ws.err=e}
-    else if(t&&t.phase==='play'&&mine&&m.a==='play')play(t,s,m.i);
+    else if(t&&t.phase==='bid'&&mine){s.afk=0;s.kick=false;const e=bid(t,s,m);if(e)ws.err=e}
+    else if(t&&t.phase==='play'&&mine&&m.a==='play'){s.afk=0;s.kick=false;play(t,s,m.i)}
     else if(t&&t.phase==='azi'&&m.a==='azi'&&t.offer[ws.u]!=null&&!(ws.u in t.dec)){
       t.dec[ws.u]=!!m.yes&&users[ws.u].chips>=t.offer[ws.u];
       if(Object.keys(t.offer).every(id=>id in t.dec))aziGo(t);
